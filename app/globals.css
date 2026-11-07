@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  --sidebar: #14323f;
+  --sidebar-2: #0f2833;
+  --sidebar-text: #d7e4ea;
+  --sidebar-muted: #8aa3ae;
+  --sidebar-active: #1c4a5c;
+  --accent: #1f7a5c;
+  --accent-soft: #e7f4ee;
+  --canvas: #eef2ef;
+  --card: #ffffff;
+  --ink: #1a1f1c;
+  --muted: #6b7280;
+  --line: #e2e8e4;
+  --danger: #c45c5c;
+  --warn: #c9852a;
+  --radius: 16px;
+}
+
+@theme inline {
+  --color-sidebar: var(--sidebar);
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-inter);
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: #cfe8dc;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 0 rgba(20, 50, 63, 0.03);
+}
+
+.delta-up {
+  color: #1b7a4e;
+}
+
+.delta-down {
+  color: var(--danger);
+}
+
+.delta-flat {
+  color: var(--muted);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #c5d0cb;
+  border-radius: 99px;
+}
