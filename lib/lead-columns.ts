@@ -40,7 +40,7 @@ export const DEFAULT_LEAD_COLUMNS = [
 export const LEAD_COLUMNS_KEY = "vs-crm-lead-columns";
 
 export function buildLeadColumns(customFields: CustomField[]): LeadColumn[] {
-  const custom = customFields
+  const custom: LeadColumn[] = customFields
     .filter((f) => f.isActive)
     .map((f) => ({
       id: `cf:${f.key}`,
