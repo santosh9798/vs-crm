@@ -209,11 +209,19 @@ export type SmtpSettings = {
   fromEmail: string;
 };
 
+export type MetaSettings = {
+  verifyToken: string;
+  appSecret: string;
+  pageAccessToken: string;
+  pageId: string;
+};
+
 export type AppSettings = {
   companyName: string;
   catalogApiUrl: string;
   catalogApiKey: string;
   smtp: SmtpSettings;
+  meta: MetaSettings;
 };
 
 export type CatalogPlan = {

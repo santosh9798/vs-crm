@@ -492,6 +492,12 @@ export const settings: AppSettings = {
     fromName: "VS Virtual Office",
     fromEmail: "hello@example.com",
   },
+  meta: {
+    verifyToken: "",
+    appSecret: "",
+    pageAccessToken: "",
+    pageId: "",
+  },
 };
 
 export const catalogStates: CatalogState[] = [

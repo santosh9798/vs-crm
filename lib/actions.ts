@@ -6,6 +6,7 @@ import { slugify } from "@/lib/format";
 import { toDbSource } from "@/lib/map";
 import { resetAssignmentCounts, validateShares } from "@/lib/assignment";
 import { createManualLead, processWebsiteEvent, saveCustomValues } from "@/lib/ingest";
+import { processMetaEvent } from "@/lib/meta";
 import type {
   ActivityStatus,
   ActivityType,
@@ -378,8 +379,13 @@ export async function runAction(user: User, type: string, payload: Record<string
       if (!isAdmin(user)) throw new Error("Admin only");
       const patch = payload as Partial<AppSettings>;
       const current = await prisma.setting.findUnique({ where: { key: "app" } });
-      const prev = (current?.value ?? {}) as AppSettings & { smtp?: { password?: string } };
+      const prev = (current?.value ?? {}) as AppSettings & {
+        smtp?: { password?: string };
+        meta?: Partial<AppSettings["meta"]>;
+      };
       const keepPassword = !patch.smtp || !patch.smtp.password || patch.smtp.password.includes("•");
+      const keepAppSecret = !patch.meta || !patch.meta.appSecret || patch.meta.appSecret.includes("•");
+      const keepPageToken = !patch.meta || !patch.meta.pageAccessToken || patch.meta.pageAccessToken.includes("•");
       const next = {
         ...prev,
         ...patch,
@@ -389,6 +395,16 @@ export async function runAction(user: User, type: string, payload: Record<string
           password: keepPassword
             ? prev.smtp?.password ?? ""
             : encryptSecret(patch.smtp?.password ?? ""),
+        },
+        meta: {
+          ...(typeof prev.meta === "object" ? prev.meta : {}),
+          ...(patch.meta ?? {}),
+          appSecret: keepAppSecret
+            ? prev.meta?.appSecret ?? ""
+            : encryptSecret(patch.meta?.appSecret ?? ""),
+          pageAccessToken: keepPageToken
+            ? prev.meta?.pageAccessToken ?? ""
+            : encryptSecret(patch.meta?.pageAccessToken ?? ""),
         },
       };
       await prisma.setting.upsert({
@@ -408,7 +424,10 @@ export async function runAction(user: User, type: string, payload: Record<string
     }
     case "event.reprocess": {
       if (!isAdmin(user)) throw new Error("Admin only");
-      await processWebsiteEvent(String(payload.id));
+      const event = await prisma.incomingEvent.findUnique({ where: { id: String(payload.id) } });
+      if (!event) throw new Error("Event not found");
+      if (event.source === "MetaAds") await processMetaEvent(event.id);
+      else await processWebsiteEvent(event.id);
       return { ok: true };
     }
     case "password.update": {

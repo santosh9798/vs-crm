@@ -103,6 +103,8 @@ export async function processWebsiteEvent(eventId: string) {
             create: {
               rawPayload: JSON.parse(JSON.stringify(body)) as Prisma.InputJsonValue,
               campaign: body.utm?.campaign ?? null,
+              adSet: String(body.ad_name ?? body.ad_id ?? "").trim() || null,
+              formName: String(body.form_id ?? "").trim() || null,
               pageUrl: body.page_url ? String(body.page_url) : null,
               receivedAt: body.submitted_at ? new Date(String(body.submitted_at)) : new Date(),
             },

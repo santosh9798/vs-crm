@@ -88,6 +88,7 @@ const emptyState = (): DemoState => ({
     catalogApiUrl: "",
     catalogApiKey: "",
     smtp: { host: "", port: "587", username: "", password: "", fromName: "VOspaces", fromEmail: "" },
+    meta: { verifyToken: "", appSecret: "", pageAccessToken: "", pageId: "" },
   },
   sessionUserId: null,
 });

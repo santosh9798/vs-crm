@@ -44,9 +44,12 @@ export type AppState = {
 function settingsFromJson(raw: unknown): AppSettings {
   const value = (raw && typeof raw === "object" ? raw : {}) as Partial<AppSettings> & {
     smtp?: Partial<AppSettings["smtp"]> & { password?: string };
+    meta?: Partial<AppSettings["meta"]>;
   };
   const encrypted = value.smtp?.password ?? "";
   const hasPassword = Boolean(encrypted);
+  const hasAppSecret = Boolean(value.meta?.appSecret);
+  const hasPageToken = Boolean(value.meta?.pageAccessToken);
   return {
     companyName: value.companyName ?? "VS CRM",
     catalogApiUrl: value.catalogApiUrl ?? "",
@@ -58,6 +61,12 @@ function settingsFromJson(raw: unknown): AppSettings {
       password: hasPassword ? "••••••••" : "",
       fromName: value.smtp?.fromName ?? "VOspaces",
       fromEmail: value.smtp?.fromEmail ?? "",
+    },
+    meta: {
+      verifyToken: value.meta?.verifyToken ?? "",
+      appSecret: hasAppSecret ? "••••••••" : "",
+      pageAccessToken: hasPageToken ? "••••••••" : "",
+      pageId: value.meta?.pageId ?? "",
     },
   };
 }
