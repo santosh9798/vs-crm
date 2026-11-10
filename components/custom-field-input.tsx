@@ -79,22 +79,28 @@ export function FieldGroup({
   fields,
   values,
   onChange,
+  optionOverrides,
+  skipKeys,
 }: {
   title: string;
   fields: CustomField[];
   values: Record<string, string | number | boolean | null>;
   onChange: (key: string, value: string | number | boolean | null) => void;
+  optionOverrides?: Record<string, string[]>;
+  skipKeys?: string[];
 }) {
-  if (fields.length === 0) return null;
+  const hidden = new Set(skipKeys ?? []);
+  const visible = fields.filter((f) => !hidden.has(f.key));
+  if (visible.length === 0) return null;
   return (
     <div>
       <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">{title}</p>
-      {fields.map((f) => (
+      {visible.map((f) => (
         <PropertyRow key={f.id} label={f.label} required={f.required}>
           <CustomFieldInput
             compact
             type={f.type}
-            options={f.options}
+            options={optionOverrides?.[f.key] ?? f.options}
             value={values[f.key]}
             onChange={(v) => onChange(f.key, v)}
           />

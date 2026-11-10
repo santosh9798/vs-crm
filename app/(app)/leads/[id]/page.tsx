@@ -8,6 +8,7 @@ import { formatDate, formatDateTime, formatInr } from "@/lib/format";
 import { Badge, Button, Card, Field, Select, Textarea, cn } from "@/components/ui";
 import { FieldGroup, groupedFields } from "@/components/custom-field-input";
 import { PlannedActivities, ScheduleActivityModal } from "@/components/schedule-activity";
+import { citiesInState, locationsInPlace, planNamesFromCatalog, useCatalog } from "@/lib/use-catalog";
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +18,18 @@ export default function LeadDetailPage() {
   const stages = useStageMap();
   const users = useUserMap();
   const lead = visibleLeads.find((l) => l.id === id) ?? state.leads.find((l) => l.id === id);
+  const { catalog } = useCatalog(state.settings.catalogApiUrl, state.settings.catalogApiKey);
+  const optionOverrides = useMemo(() => {
+    const stateName = String(lead?.customValues?.required_state || lead?.state || "");
+    const cityName = String(lead?.customValues?.required_city || lead?.city || "");
+    const plans = planNamesFromCatalog(catalog);
+    return {
+      plan_type: plans.length ? plans : ["GST Registration", "Business Registration", "Mailing Address"],
+      required_state: [...catalog.states].sort((a, b) => a.name.localeCompare(b.name)).map((s) => s.name),
+      required_city: citiesInState(catalog, stateName).map((c) => c.name),
+      preferred_location: locationsInPlace(catalog, stateName, cityName),
+    };
+  }, [catalog, lead]);
 
   const [note, setNote] = useState("");
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -174,6 +187,7 @@ export default function LeadDetailPage() {
                   fields={g.fields}
                   values={lead.customValues}
                   onChange={setCustom}
+                  optionOverrides={optionOverrides}
                 />
               ))}
             </div>

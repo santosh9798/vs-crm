@@ -7,6 +7,7 @@ import { useDemo } from "@/lib/demo-store";
 import { FieldGroup, groupedFields } from "@/components/custom-field-input";
 import { PlannedActivities, ScheduleActivityModal, type DraftActivity } from "@/components/schedule-activity";
 import { Button, Card, Field, Input, Modal, Select, Textarea, cn } from "@/components/ui";
+import { citiesInState, locationsInPlace, planNamesFromCatalog, useCatalog } from "@/lib/use-catalog";
 import type { FieldType, LeadSource } from "@/lib/types";
 
 const FIELD_TYPES: FieldType[] = ["text", "number", "email", "phone", "dropdown", "date", "datetime", "checkbox", "textarea"];
@@ -24,8 +25,12 @@ export default function NewLeadPage() {
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
-  const [stateName, setStateName] = useState("Delhi");
-  const [city, setCity] = useState("New Delhi");
+  const [stateName, setStateName] = useState("");
+  const [city, setCity] = useState("");
+  const { catalog, status: catalogStatus, error: catalogError } = useCatalog(
+    state.settings.catalogApiUrl,
+    state.settings.catalogApiKey,
+  );
   const [source, setSource] = useState<LeadSource>("Manual");
   const [assignedTo, setAssignedTo] = useState(currentUser?.id ?? "");
   const [stageId, setStageId] = useState("st_new");
@@ -47,6 +52,48 @@ export default function NewLeadPage() {
 
   const groups = useMemo(() => groupedFields(state.customFields), [state.customFields]);
   const canAddField = isAdmin || can("create_fields");
+  const catalogStates = useMemo(
+    () => [...catalog.states].sort((a, b) => a.name.localeCompare(b.name)),
+    [catalog.states],
+  );
+  const catalogCities = useMemo(() => citiesInState(catalog, stateName), [catalog, stateName]);
+  const planOptions = useMemo(() => {
+    const names = planNamesFromCatalog(catalog);
+    return names.length ? names : ["GST Registration", "Business Registration", "Mailing Address"];
+  }, [catalog]);
+  const locationOptions = useMemo(
+    () => locationsInPlace(catalog, stateName, city),
+    [catalog, stateName, city],
+  );
+  const optionOverrides = useMemo(
+    () => ({
+      plan_type: planOptions,
+      required_state: catalogStates.map((s) => s.name),
+      required_city: catalogCities.map((c) => c.name),
+      preferred_location: locationOptions,
+    }),
+    [planOptions, catalogStates, catalogCities, locationOptions],
+  );
+
+  const pickState = (next: string) => {
+    setStateName(next);
+    setCity("");
+    setValues((v) => ({
+      ...v,
+      required_state: next || null,
+      required_city: null,
+      preferred_location: null,
+    }));
+  };
+
+  const pickCity = (next: string) => {
+    setCity(next);
+    setValues((v) => ({
+      ...v,
+      required_city: next || null,
+      preferred_location: null,
+    }));
+  };
 
   const setValue = (key: string, value: string | number | boolean | null) => {
     setValues((v) => ({ ...v, [key]: value }));
@@ -108,7 +155,13 @@ export default function NewLeadPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Add lead</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Custom fields appear here as soon as they are created — same idea as Odoo properties.
+            {catalogStatus === "live"
+              ? "State, city and plan type come from live VOspaces listings."
+              : catalogStatus === "loading"
+                ? "Loading listing states and plans…"
+                : catalogStatus === "error"
+                  ? `Catalog API failed — sample lists. ${catalogError}`
+                  : "Connect the catalog API in Settings for live states, cities and plans."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -164,23 +217,33 @@ export default function NewLeadPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="City">
-              <Input
-                value={city}
-                onChange={(e) => {
-                  setCity(e.target.value);
-                  setValue("required_city", e.target.value);
-                }}
-              />
-            </Field>
             <Field label="State">
-              <Input
+              <Select
+                required
+                disabled={catalogStatus === "loading"}
                 value={stateName}
-                onChange={(e) => {
-                  setStateName(e.target.value);
-                  setValue("required_state", e.target.value);
-                }}
-              />
+                onChange={(e) => pickState(e.target.value)}
+              >
+                <option value="">{catalogStatus === "loading" ? "Loading states…" : "Select state"}</option>
+                {catalogStates.map((s) => (
+                  <option key={s.id} value={s.name}>{s.name}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="City">
+              <Select
+                required
+                disabled={!stateName || catalogStatus === "loading"}
+                value={city}
+                onChange={(e) => pickCity(e.target.value)}
+              >
+                <option value="">
+                  {!stateName ? "Select state first" : catalogCities.length ? "Select city" : "No cities in this state"}
+                </option>
+                {catalogCities.map((c) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </Select>
             </Field>
             <Field label="Source">
               <Select value={source} onChange={(e) => setSource(e.target.value as LeadSource)}>
@@ -200,6 +263,8 @@ export default function NewLeadPage() {
                 fields={g.fields}
                 values={values}
                 onChange={setValue}
+                optionOverrides={optionOverrides}
+                skipKeys={["required_state", "required_city"]}
               />
             ))}
           </div>
