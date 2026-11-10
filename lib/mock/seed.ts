@@ -479,7 +479,8 @@ export const incomingEvents: IncomingEvent[] = [
 
 export const settings: AppSettings = {
   companyName: "VS CRM",
-  catalogApiKey: "crm_live_••••••••9f2a",
+  catalogApiUrl: "https://vospaces.com/adminPannel/catalog-api/crm-listings-api.php",
+  catalogApiKey: "vs-crm-catalog-change-me",
   smtp: {
     host: "smtp.example.com",
     port: "587",

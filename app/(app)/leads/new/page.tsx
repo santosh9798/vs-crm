@@ -47,9 +47,9 @@ export default function NewLeadPage() {
     setValues((v) => ({ ...v, [key]: value }));
   };
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const lead = addLead({
+    const lead = await addLead({
       name,
       mobile,
       email,
@@ -71,8 +71,8 @@ export default function NewLeadPage() {
         required_state: values.required_state || stateName,
       },
     });
-    queued.forEach((a) => {
-      addActivity({
+    for (const a of queued) {
+      await addActivity({
         leadId: lead.id,
         type: a.type,
         description: a.description,
@@ -81,8 +81,8 @@ export default function NewLeadPage() {
         status: a.status,
         silent: true,
       });
-      if (a.note) addNote(lead.id, a.note);
-    });
+      if (a.note) await addNote(lead.id, a.note);
+    }
     router.push(`/leads/${lead.id}`);
   };
 

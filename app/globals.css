@@ -86,3 +86,13 @@ input[type="checkbox"] {
   background: #c5d0cb;
   border-radius: 99px;
 }
+
+@media print {
+  body {
+    background: white !important;
+  }
+  .quotation-doc {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+}

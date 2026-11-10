@@ -12,27 +12,52 @@ import {
   YAxis,
 } from "recharts";
 import { useDemo, useStageMap, useUserMap } from "@/lib/demo-store";
-import { monthDeltas } from "@/lib/mock/seed";
-import { Avatar, Badge, Card, Input, cn } from "@/components/ui";
+import { istYmd } from "@/lib/format";
+import { Avatar, Card, Input, cn } from "@/components/ui";
+import type { Lead } from "@/lib/types";
 
 type Period = "today" | "week" | "month" | "custom";
 
-const TODAY = new Date("2026-11-05T23:59:59+05:30");
+function addDays(ymd: string, days: number) {
+  const d = new Date(`${ymd}T00:00:00+05:30`);
+  d.setDate(d.getDate() + days);
+  return istYmd(d);
+}
+
+function monthStart(ymd: string) {
+  return `${ymd.slice(0, 7)}-01`;
+}
+
+function previousMonthStart(ymd: string) {
+  const d = new Date(`${monthStart(ymd)}T00:00:00+05:30`);
+  d.setMonth(d.getMonth() - 1);
+  return istYmd(d);
+}
 
 function inPeriod(iso: string, period: Period, customFrom: string, customTo: string) {
-  const d = new Date(iso);
-  if (period === "today") {
-    return iso.slice(0, 10) === "2026-11-05";
-  }
-  if (period === "week") {
-    return d >= new Date("2026-11-02T00:00:00+05:30") && d <= TODAY;
-  }
-  if (period === "custom") {
-    const from = customFrom || "2026-10-01";
-    const to = customTo || "2026-11-05";
-    return iso.slice(0, 10) >= from && iso.slice(0, 10) <= to;
-  }
-  return true;
+  const key = istYmd(new Date(iso));
+  const today = istYmd();
+  if (period === "today") return key === today;
+  if (period === "week") return key >= addDays(today, -6) && key <= today;
+  if (period === "month") return key >= monthStart(today) && key <= today;
+  const from = customFrom || monthStart(today);
+  const to = customTo || today;
+  return key >= from && key <= to;
+}
+
+function countKpis(leads: Lead[]) {
+  const count = (id: string) => leads.filter((l) => l.stageId === id).length;
+  return {
+    total: leads.length,
+    new: count("st_new"),
+    active: count("st_active"),
+    interested: count("st_interested"),
+    followup: count("st_followup"),
+    booking: count("st_booking"),
+    converted: count("st_converted"),
+    lost: count("st_lost"),
+    duplicates: leads.filter((l) => l.duplicateOfId).length,
+  };
 }
 
 function Delta({ value }: { value: number }) {
@@ -52,41 +77,34 @@ export default function DashboardPage() {
   const users = useUserMap();
   const [period, setPeriod] = useState<Period>("month");
   const [compare, setCompare] = useState(true);
-  const [from, setFrom] = useState("2026-10-23");
-  const [to, setTo] = useState("2026-11-05");
+  const [from, setFrom] = useState(monthStart(istYmd()));
+  const [to, setTo] = useState(istYmd());
 
   const leads = useMemo(
     () => visibleLeads.filter((l) => inPeriod(l.createdAt, period, from, to)),
     [visibleLeads, period, from, to],
   );
 
-  const kpis = useMemo(() => {
-    const count = (id: string) => leads.filter((l) => l.stageId === id).length;
-    return {
-      total: leads.length,
-      new: count("st_new"),
-      active: count("st_active"),
-      interested: count("st_interested"),
-      followup: count("st_followup"),
-      booking: count("st_booking"),
-      converted: count("st_converted"),
-      lost: count("st_lost"),
-      duplicates: leads.filter((l) => l.duplicateOfId).length,
-    };
-  }, [leads]);
+  const kpis = useMemo(() => countKpis(leads), [leads]);
+  const prevKpis = useMemo(() => {
+    const today = istYmd();
+    const prevFrom = previousMonthStart(today);
+    const prevTo = addDays(monthStart(today), -1);
+    return countKpis(visibleLeads.filter((l) => {
+      const key = istYmd(new Date(l.createdAt));
+      return key >= prevFrom && key <= prevTo;
+    }));
+  }, [visibleLeads]);
 
   const conversion = leads.length ? (kpis.converted / leads.length) * 100 : 0;
 
   const daily = useMemo(() => {
     const days: { label: string; value: number }[] = [];
     for (let i = 13; i >= 0; i--) {
-      const d = new Date(TODAY);
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      const label = String(d.getDate());
+      const key = addDays(istYmd(), -i);
       days.push({
-        label,
-        value: visibleLeads.filter((l) => l.createdAt.slice(0, 10) === key).length,
+        label: String(Number(key.slice(8, 10))),
+        value: visibleLeads.filter((l) => istYmd(new Date(l.createdAt)) === key).length,
       });
     }
     return days;
@@ -132,14 +150,14 @@ export default function DashboardPage() {
   });
 
   const cards = [
-    { key: "total", label: "Total leads", value: kpis.total, delta: monthDeltas.total, href: "/leads" },
-    { key: "new", label: "New", value: kpis.new, delta: monthDeltas.new, href: "/leads?stage=st_new" },
-    { key: "active", label: "Active", value: kpis.active, delta: monthDeltas.active, href: "/leads?stage=st_active" },
-    { key: "interested", label: "Interested", value: kpis.interested, delta: monthDeltas.interested, href: "/leads?stage=st_interested" },
-    { key: "booking", label: "Booking", value: kpis.booking, delta: monthDeltas.booking, href: "/leads?stage=st_booking" },
-    { key: "converted", label: "Converted", value: kpis.converted, delta: monthDeltas.converted, href: "/leads?stage=st_converted" },
-    { key: "lost", label: "Lost", value: kpis.lost, delta: monthDeltas.lost, href: "/leads?stage=st_lost" },
-    { key: "duplicates", label: "Duplicates", value: kpis.duplicates, delta: monthDeltas.duplicates, href: "/leads?duplicate=yes" },
+    { key: "total", label: "Total leads", value: kpis.total, delta: kpis.total - prevKpis.total, href: "/leads" },
+    { key: "new", label: "New", value: kpis.new, delta: kpis.new - prevKpis.new, href: "/leads?stage=st_new" },
+    { key: "active", label: "Active", value: kpis.active, delta: kpis.active - prevKpis.active, href: "/leads?stage=st_active" },
+    { key: "interested", label: "Interested", value: kpis.interested, delta: kpis.interested - prevKpis.interested, href: "/leads?stage=st_interested" },
+    { key: "booking", label: "Booking", value: kpis.booking, delta: kpis.booking - prevKpis.booking, href: "/leads?stage=st_booking" },
+    { key: "converted", label: "Converted", value: kpis.converted, delta: kpis.converted - prevKpis.converted, href: "/leads?stage=st_converted" },
+    { key: "lost", label: "Lost", value: kpis.lost, delta: kpis.lost - prevKpis.lost, href: "/leads?stage=st_lost" },
+    { key: "duplicates", label: "Duplicates", value: kpis.duplicates, delta: kpis.duplicates - prevKpis.duplicates, href: "/leads?duplicate=yes" },
   ];
 
   return (

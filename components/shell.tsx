@@ -127,11 +127,11 @@ export function Sidebar() {
 }
 
 export function TopBar() {
-  const { currentUser, isAdmin, switchPreview, state, markNotificationsRead } = useDemo();
+  const { currentUser, isAdmin, state, markNotificationsRead } = useDemo();
   const [open, setOpen] = useState(false);
   const mine = useMemo(
-    () => state.notifications.filter((n) => n.userId === currentUser?.id || (isAdmin && n.userId === "u_admin")),
-    [state.notifications, currentUser, isAdmin],
+    () => state.notifications.filter((n) => n.userId === currentUser?.id),
+    [state.notifications, currentUser],
   );
   const unread = mine.filter((n) => !n.readAt);
 
@@ -139,20 +139,9 @@ export function TopBar() {
 
   return (
     <header className="flex items-center justify-end gap-3 px-4 py-3 sm:px-6">
-      <div className="mr-auto hidden items-center gap-2 rounded-full border border-dashed border-[#c5d5cc] bg-white/70 px-3 py-1 text-[11px] text-[var(--muted)] sm:flex">
-        UI preview
-        <button
-          onClick={() => switchPreview("admin")}
-          className={cn("rounded-full px-2 py-0.5", isAdmin ? "bg-[var(--sidebar)] text-white" : "hover:bg-black/5")}
-        >
-          Admin
-        </button>
-        <button
-          onClick={() => switchPreview("salesperson")}
-          className={cn("rounded-full px-2 py-0.5", !isAdmin ? "bg-[var(--sidebar)] text-white" : "hover:bg-black/5")}
-        >
-          Salesperson
-        </button>
+      <div className="mr-auto hidden sm:block">
+        <p className="text-sm font-medium">{currentUser.name}</p>
+        <p className="text-[11px] text-[var(--muted)]">{isAdmin ? "Admin" : "Salesperson"}</p>
       </div>
       <div className="relative">
         <button
@@ -192,7 +181,7 @@ export function TopBar() {
       <div className="flex items-center gap-2 rounded-full bg-white py-1 pl-1 pr-3 shadow-sm">
         <Avatar initials={currentUser.initials} />
         <div className="hidden leading-tight sm:block">
-          <p className="text-sm font-semibold">{currentUser.role === "admin" ? "A Admin" : currentUser.name}</p>
+          <p className="text-sm font-semibold">{currentUser.name}</p>
           <p className="text-[11px] text-[var(--muted)]">
             {currentUser.role === "admin" ? "Full access" : "Assigned leads only"}
           </p>
@@ -233,7 +222,7 @@ export function RequireSession({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-dvh items-center justify-center">
         <div className="card max-w-sm p-6 text-center">
           <p className="font-medium">Sign in to continue</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">This UI preview uses a mock session.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Your session is stored in a secure cookie.</p>
           <Button className="mt-4 w-full" onClick={() => router.push("/login")}>
             Go to login
           </Button>
@@ -269,7 +258,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function MobileNav() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const { isAdmin, logout, switchPreview } = useDemo();
+  const { isAdmin, logout } = useDemo();
   const router = useRouter();
   const items = isAdmin ? [...MAIN, ...ADMIN] : MAIN;
   return (
@@ -295,10 +284,6 @@ function MobileNav() {
               {item.label}
             </Link>
           ))}
-          <div className="flex gap-2 px-3 pt-2 text-xs">
-            <button onClick={() => switchPreview("admin")}>Admin</button>
-            <button onClick={() => switchPreview("salesperson")}>Salesperson</button>
-          </div>
           <button
             className="px-3 pt-2 text-sm text-[var(--sidebar-text)]"
             onClick={() => {

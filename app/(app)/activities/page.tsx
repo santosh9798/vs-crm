@@ -28,7 +28,7 @@ export default function ActivitiesPage() {
     return true;
   });
 
-  const now = new Date("2026-11-05T12:00:00+05:30").getTime();
+  const now = Date.now();
 
   return (
     <div>

@@ -136,7 +136,7 @@ export function PlannedActivities({
 }) {
   const pending = useMemo(() => items.filter((a) => a.status === "pending"), [items]);
   const done = useMemo(() => items.filter((a) => a.status === "completed").slice(0, 4), [items]);
-  const now = new Date("2026-11-05T12:00:00+05:30").getTime();
+  const now = Date.now();
 
   return (
     <div className="card flex h-full flex-col p-4">

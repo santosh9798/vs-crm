@@ -11,7 +11,7 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     return (
       <Card className="max-w-md">
         <p className="font-medium">Admin only</p>
-        <p className="mt-1 text-sm text-[var(--muted)]">Switch to Admin in the preview bar to open this screen.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">This screen is only available to Admin users.</p>
         <Button className="mt-4" onClick={() => router.push("/dashboard")}>Back to dashboard</Button>
       </Card>
     );

@@ -1,12 +1,28 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
-import { catalogCities, catalogSpaces, catalogStates } from "@/lib/mock/seed";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { loadCatalog, MOCK_CATALOG, voPlanLabel, voPrice, type ResolvedCatalog, type VoPlanKind } from "@/lib/catalog";
+import { quotationPlainText, QuotationDocument } from "@/components/quotation-document";
+import { CA_SERVICES } from "@/lib/quotation-copy";
 import { useDemo } from "@/lib/demo-store";
-import { formatInrExact } from "@/lib/format";
-import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
-import type { QuotationItem } from "@/lib/types";
+import { formatInrNumber, withGst } from "@/lib/format";
+import { Button, Card, Field, Input, PageHeader, Select, cn } from "@/components/ui";
+import type { CatalogSpace, QuotationItem } from "@/lib/types";
+
+const PLAN_KINDS: { id: VoPlanKind; label: string }[] = [
+  { id: "gst", label: "GST Registration (11-month)" },
+  { id: "br", label: "Business Registration" },
+  { id: "ma", label: "Mailing Address" },
+];
+
+function pricedSpace(space: CatalogSpace, kind: VoPlanKind): CatalogSpace {
+  const price = voPrice(space, kind);
+  return {
+    ...space,
+    plans: [{ id: kind, name: voPlanLabel(kind), duration: "11 months", price }],
+  };
+}
 
 function Wizard() {
   const params = useSearchParams();
@@ -14,61 +30,181 @@ function Wizard() {
   const { visibleLeads, currentUser, addQuotation, toast, state } = useDemo();
   const [leadId, setLeadId] = useState(params.get("leadId") ?? visibleLeads[0]?.id ?? "");
   const [stateId, setStateId] = useState("");
-  const [cityId, setCityId] = useState("");
-  const [spaceId, setSpaceId] = useState("");
-  const [planId, setPlanId] = useState("");
-  const [qty, setQty] = useState(1);
-  const [items, setItems] = useState<QuotationItem[]>([]);
-  const [preview, setPreview] = useState(false);
+  const [cityIds, setCityIds] = useState<string[]>([]);
+  const [spaceIds, setSpaceIds] = useState<string[]>([]);
+  const [planKind, setPlanKind] = useState<VoPlanKind>("gst");
+  const [includeCa, setIncludeCa] = useState(true);
+  const [caIds, setCaIds] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+  const [catalog, setCatalog] = useState<ResolvedCatalog>(MOCK_CATALOG);
+  const [catalogStatus, setCatalogStatus] = useState<"mock" | "live" | "loading" | "error">(
+    state.settings.catalogApiUrl.trim() ? "loading" : "mock",
+  );
+  const [catalogError, setCatalogError] = useState("");
 
-  const cities = catalogCities.filter((c) => c.stateId === stateId);
-  const spaces = catalogSpaces.filter((s) => s.cityId === cityId);
-  const space = catalogSpaces.find((s) => s.id === spaceId);
-  const plan = space?.plans.find((p) => p.id === planId);
+  useEffect(() => {
+    const url = state.settings.catalogApiUrl.trim();
+    if (!url) {
+      setCatalog(MOCK_CATALOG);
+      setCatalogStatus("mock");
+      return;
+    }
+    let cancelled = false;
+    setCatalogStatus("loading");
+    loadCatalog(url, state.settings.catalogApiKey)
+      .then((c) => {
+        if (cancelled) return;
+        setCatalog(c);
+        setCatalogStatus("live");
+        setCatalogError("");
+        setStateId((current) => (c.states.some((s) => s.id === current) ? current : ""));
+        setCityIds([]);
+        setSpaceIds([]);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setCatalog(MOCK_CATALOG);
+        setCatalogStatus("error");
+        setCatalogError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.settings.catalogApiUrl, state.settings.catalogApiKey]);
+
   const lead = visibleLeads.find((l) => l.id === leadId) ?? state.leads.find((l) => l.id === leadId);
-  const total = items.reduce((s, i) => s + i.lineTotal, 0);
 
-  const addLine = () => {
-    if (!space || !plan) return;
-    setItems((rows) => [
-      ...rows,
-      {
-        id: `qi_${rows.length + 1}`,
-        spaceId: space.id,
-        name: space.name,
-        details: space.description,
-        planName: plan.name,
-        duration: plan.duration,
-        quantity: qty,
-        unitPrice: plan.price,
-        lineTotal: plan.price * qty,
-      },
-    ]);
-    setPlanId("");
+  useEffect(() => {
+    if (catalogStatus === "loading" || catalog.states.length === 0) return;
+    const valid = stateId && catalog.states.some((s) => s.id === stateId);
+    if (valid) return;
+    const match = catalog.states.find((s) => s.name.toLowerCase() === lead?.state.toLowerCase());
+    setStateId(match?.id ?? "");
+  }, [catalog.states, catalogStatus, lead, stateId]);
+
+  const cities = catalog.cities.filter((c) => c.stateId === stateId);
+  const inState = catalog.spaces.filter((s) => (s.state || s.cityId.split("|")[0]) === stateId);
+  const cityFiltered = cityIds.length
+    ? inState.filter((s) => cityIds.includes(s.cityId))
+    : inState;
+  const query = q.trim().toLowerCase();
+  const visibleSpaces = cityFiltered
+    .map((s) => pricedSpace(s, planKind))
+    .filter((s) => s.plans[0].price > 0)
+    .filter((s) =>
+      !query ||
+      (s.location || s.name).toLowerCase().includes(query) ||
+      (s.city || "").toLowerCase().includes(query),
+    )
+    .sort((a, b) => a.plans[0].price - b.plans[0].price);
+
+  const selectedSpaces = inState
+    .filter((s) => spaceIds.includes(s.id))
+    .map((s) => pricedSpace(s, planKind))
+    .filter((s) => s.plans[0].price > 0)
+    .sort((a, b) => a.plans[0].price - b.plans[0].price);
+
+  const toggleCity = (id: string) => {
+    setCityIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   };
 
-  const send = (as: "draft" | "sent") => {
-    if (!lead || !currentUser) return;
-    addQuotation({
+  const toggleSpace = (id: string) => {
+    setSpaceIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  };
+
+  const selectVisible = () => setSpaceIds((ids) => [...new Set([...ids, ...visibleSpaces.map((s) => s.id)])]);
+  const clearSpaces = () => setSpaceIds([]);
+
+  const quoteItems: QuotationItem[] = useMemo(() => {
+    const spaces: QuotationItem[] = selectedSpaces.map((s) => ({
+      id: `qi_${s.id}`,
+      spaceId: s.id,
+      name: s.location || s.name,
+      details: s.city || s.address,
+      planName: voPlanLabel(planKind),
+      duration: "11 months",
+      quantity: 1,
+      unitPrice: s.plans[0].price,
+      lineTotal: withGst(s.plans[0].price),
+      city: s.city,
+      location: s.location || s.name,
+      listingUrl: s.listingUrl,
+      kind: "space",
+    }));
+    const cas: QuotationItem[] = includeCa
+      ? CA_SERVICES.filter((c) => caIds.includes(c.id)).map((c) => ({
+          id: c.id,
+          spaceId: c.id,
+          name: c.name,
+          details: c.description,
+          planName: "CA (one-time)",
+          duration: "one-time",
+          quantity: 1,
+          unitPrice: c.price,
+          lineTotal: withGst(c.price),
+          kind: "ca",
+        }))
+      : [];
+    return [...spaces, ...cas];
+  }, [selectedSpaces, planKind, caIds, includeCa]);
+
+  const stateName = catalog.states.find((s) => s.id === stateId)?.name ?? stateId;
+  const lowest = selectedSpaces[0]?.plans[0].price ?? 0;
+
+  const send = async (as: "draft" | "sent") => {
+    if (!lead || !currentUser || selectedSpaces.length === 0) return;
+    await addQuotation({
       leadId: lead.id,
       createdBy: currentUser.id,
       recipient: lead.email,
-      totalAmount: total,
+      totalAmount: withGst(lowest),
       status: as,
       sentAt: as === "sent" ? new Date().toISOString() : null,
-      items,
+      items: quoteItems,
     });
-    toast(as === "sent" ? "Branded PDF emailed to the lead (preview)" : "Draft saved");
+    toast(as === "sent" ? "Quotation saved as sent" : "Draft saved");
     router.push("/quotations");
   };
 
-  const company = state.settings.companyName;
+  const copyQuote = async () => {
+    const text = quotationPlainText({
+      leadName: lead?.name,
+      stateName,
+      spaces: selectedSpaces,
+      planKind,
+      caIds,
+      includeCa,
+    });
+    await navigator.clipboard.writeText(text);
+    toast("Quotation copied — paste into email or WhatsApp");
+  };
+
+  const subtitle =
+    catalogStatus === "live"
+      ? "Live VOspaces listings. Pick a state and multiple locations — no quantity."
+      : catalogStatus === "loading"
+        ? "Loading listing prices…"
+        : catalogStatus === "error"
+          ? `Catalog API failed — sample prices. ${catalogError}`
+          : "Sample prices until the catalog API is connected.";
 
   return (
-    <div className="max-w-4xl">
-      <PageHeader title="Generate quotation" subtitle="State → City → Space → Plan. Prices come from the website catalog (mock)." />
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <Card>
+    <div>
+      <PageHeader
+        title="Generate quotation"
+        subtitle={subtitle}
+        actions={
+          <>
+            <Button variant="outline" size="sm" disabled={selectedSpaces.length === 0} onClick={copyQuote}>Copy text</Button>
+            <Button variant="outline" size="sm" disabled={selectedSpaces.length === 0} onClick={() => window.print()}>Print</Button>
+            <Button variant="secondary" size="sm" disabled={selectedSpaces.length === 0} onClick={() => send("draft")}>Save draft</Button>
+            <Button size="sm" disabled={selectedSpaces.length === 0} onClick={() => send("sent")}>Send to lead</Button>
+          </>
+        }
+      />
+
+      <div className="grid items-start gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+        <Card className="print:hidden">
           <Field label="Lead">
             <Select value={leadId} onChange={(e) => setLeadId(e.target.value)}>
               {visibleLeads.map((l) => (
@@ -76,119 +212,134 @@ function Wizard() {
               ))}
             </Select>
           </Field>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="mt-3">
             <Field label="State">
-              <Select value={stateId} onChange={(e) => { setStateId(e.target.value); setCityId(""); setSpaceId(""); setPlanId(""); }}>
+              <Select
+                value={stateId}
+                disabled={catalogStatus === "loading"}
+                onChange={(e) => {
+                  setStateId(e.target.value);
+                  setCityIds([]);
+                  setSpaceIds([]);
+                }}
+              >
                 <option value="">Select</option>
-                {catalogStates.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </Select>
-            </Field>
-            <Field label="City">
-              <Select value={cityId} onChange={(e) => { setCityId(e.target.value); setSpaceId(""); setPlanId(""); }} disabled={!stateId}>
-                <option value="">Select</option>
-                {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            </Field>
-            <Field label="Space">
-              <Select value={spaceId} onChange={(e) => { setSpaceId(e.target.value); setPlanId(""); }} disabled={!cityId}>
-                <option value="">Select</option>
-                {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </Select>
-            </Field>
-            <Field label="Plan">
-              <Select value={planId} onChange={(e) => setPlanId(e.target.value)} disabled={!spaceId}>
-                <option value="">Select</option>
-                {space?.plans.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} · {formatInrExact(p.price)}</option>
-                ))}
+                {catalog.states.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </Select>
             </Field>
           </div>
-          {space && plan ? (
-            <div className="mt-3 rounded-xl bg-[var(--canvas)] p-3 text-sm">
-              <p className="font-medium">{space.name}</p>
-              <p className="text-[var(--muted)]">{space.address}</p>
-              <p className="mt-1">{plan.name} · {plan.duration} · {formatInrExact(plan.price)}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <Field label="Qty">
-                  <Input type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value) || 1)} className="w-24" />
-                </Field>
-                <Button className="mt-5" size="sm" onClick={addLine}>Add to quotation</Button>
+          <div className="mt-3">
+            <Field label="Plan">
+              <Select value={planKind} onChange={(e) => setPlanKind(e.target.value as VoPlanKind)}>
+                {PLAN_KINDS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </Select>
+            </Field>
+          </div>
+
+          {stateId ? (
+            <div className="mt-4">
+              <p className="mb-1.5 text-xs font-medium text-[var(--muted)]">Cities (optional filter)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {cities.map((c) => {
+                  const on = cityIds.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleCity(c.id)}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs",
+                        on ? "bg-[var(--accent)] text-white" : "bg-[var(--canvas)] text-[var(--ink)]",
+                      )}
+                    >
+                      {c.name}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}
-        </Card>
 
-        <Card>
-          <h2 className="mb-3 font-semibold">Line items</h2>
-          {items.length === 0 ? <p className="text-sm text-[var(--muted)]">Add at least one space.</p> : null}
-          {items.map((i, idx) => (
-            <div key={i.id} className="mb-2 flex items-start justify-between gap-2 border-b border-[var(--line)] pb-2 text-sm">
-              <div>
-                <p className="font-medium">{i.name}</p>
-                <p className="text-[var(--muted)]">{i.planName} × {i.quantity}</p>
+          {stateId ? (
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-[var(--muted)]">
+                  Locations · {spaceIds.length} selected
+                </p>
+                <div className="flex gap-2 text-xs">
+                  <button type="button" className="text-[var(--accent)]" onClick={selectVisible}>Select all shown</button>
+                  <button type="button" className="text-[var(--muted)]" onClick={clearSpaces}>Clear</button>
+                </div>
               </div>
-              <div className="text-right">
-                <p>{formatInrExact(i.lineTotal)}</p>
-                <button className="text-xs text-[var(--danger)]" onClick={() => setItems((rows) => rows.filter((_, n) => n !== idx))}>Remove</button>
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search location" className="mb-2 h-8" />
+              <div className="max-h-[360px] space-y-1 overflow-auto pr-1">
+                {visibleSpaces.map((s) => {
+                  const on = spaceIds.includes(s.id);
+                  return (
+                    <label key={s.id} className={cn("flex cursor-pointer items-start gap-2 rounded-xl px-2 py-1.5 text-sm hover:bg-[var(--canvas)]", on && "bg-[var(--accent-soft)]")}>
+                      <input type="checkbox" className="mt-1" checked={on} onChange={() => toggleSpace(s.id)} />
+                      <span className="flex-1">
+                        <span className="block font-medium">{s.location || s.name}</span>
+                        <span className="text-xs text-[var(--muted)]">{s.city}</span>
+                      </span>
+                      <span className="text-right text-xs">
+                        <span className="block">{formatInrNumber(s.plans[0].price)}</span>
+                        <span className="text-[var(--muted)]">{formatInrNumber(withGst(s.plans[0].price))} incl. GST</span>
+                      </span>
+                    </label>
+                  );
+                })}
+                {visibleSpaces.length === 0 ? <p className="px-2 py-6 text-center text-sm text-[var(--muted)]">No locations in this filter.</p> : null}
               </div>
             </div>
-          ))}
-          <p className="mt-3 text-lg font-semibold">Total {formatInrExact(total)}</p>
-          <p className="text-xs text-[var(--muted)]">No GST, no discounts. Snapshot is frozen when sent.</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="outline" disabled={items.length === 0} onClick={() => setPreview(true)}>Preview</Button>
-            <Button variant="secondary" disabled={items.length === 0} onClick={() => send("draft")}>Save draft</Button>
-            <Button disabled={items.length === 0} onClick={() => send("sent")}>Send PDF</Button>
+          ) : null}
+
+          <div className="mt-4">
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={includeCa}
+                onChange={() => setIncludeCa((on) => !on)}
+              />
+              <span>
+                Include Optional CA services
+                <span className="block text-xs text-[var(--muted)]">Untick to hide this block from the quotation.</span>
+              </span>
+            </label>
+            {includeCa ? (
+              <div className="mt-2 ml-6">
+                {CA_SERVICES.map((s) => (
+                  <label key={s.id} className="mb-1 flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={caIds.includes(s.id)}
+                      onChange={() => setCaIds((ids) => ids.includes(s.id) ? ids.filter((x) => x !== s.id) : [...ids, s.id])}
+                    />
+                    <span>
+                      {s.name}
+                      <span className="block text-xs text-[var(--muted)]">{formatInrNumber(s.price)} · {formatInrNumber(withGst(s.price))} incl. GST</span>
+                    </span>
+                  </label>
+                ))}
+                <p className="mt-1 text-xs text-[var(--muted)]">Leave both unticked to show all CA options, or tick only the ones this quote should offer.</p>
+              </div>
+            ) : null}
           </div>
+        </Card>
+
+        <Card className="overflow-auto p-0 print:border-0 print:shadow-none">
+          <QuotationDocument
+            leadName={lead?.name}
+            stateName={stateName}
+            spaces={selectedSpaces}
+            planKind={planKind}
+            caIds={caIds}
+            includeCa={includeCa}
+          />
         </Card>
       </div>
-
-      {preview && lead ? (
-        <Card className="mt-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold">Quotation preview</h2>
-            <button className="text-sm text-[var(--muted)]" onClick={() => setPreview(false)}>Hide</button>
-          </div>
-          <div className="rounded-xl border border-[var(--line)] p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-widest text-[var(--muted)]">{company}</p>
-                <h3 className="text-xl font-semibold">Virtual office quotation</h3>
-              </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--sidebar)] font-bold text-white">VS</div>
-            </div>
-            <div className="mt-6 grid gap-1 text-sm">
-              <p><span className="text-[var(--muted)]">Prepared for</span> {lead.name}</p>
-              <p><span className="text-[var(--muted)]">Email</span> {lead.email}</p>
-              <p><span className="text-[var(--muted)]">Mobile</span> {lead.mobile}</p>
-              <p><span className="text-[var(--muted)]">City</span> {lead.city}</p>
-            </div>
-            <table className="mt-6 w-full text-sm">
-              <thead className="text-left text-[var(--muted)]">
-                <tr>
-                  <th className="pb-2">Space</th>
-                  <th className="pb-2">Plan</th>
-                  <th className="pb-2">Qty</th>
-                  <th className="pb-2">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((i) => (
-                  <tr key={i.id} className="border-t border-[var(--line)]">
-                    <td className="py-2">{i.name}<div className="text-xs text-[var(--muted)]">{i.details}</div></td>
-                    <td>{i.planName} ({i.duration})</td>
-                    <td>{i.quantity}</td>
-                    <td>{formatInrExact(i.lineTotal)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="mt-4 text-right text-lg font-semibold">Grand total {formatInrExact(total)}</p>
-            <p className="mt-2 text-xs text-[var(--muted)]">All prices INR as listed on the website. This preview is a placeholder until the client quotation PDF is provided.</p>
-          </div>
-        </Card>
-      ) : null}
     </div>
   );
 }

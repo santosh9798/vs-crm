@@ -17,7 +17,7 @@ export default function QuotationsPage() {
     <div>
       <PageHeader
         title="Quotations"
-        subtitle="Prices are snapshots from the website catalog. Currency INR."
+        subtitle="Client quotation with 11-month location options, 18% GST, and CA add-ons."
         actions={
           canSend ? (
             <Button onClick={() => router.push("/quotations/new")}>Generate quotation</Button>

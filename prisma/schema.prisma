@@ -1,0 +1,394 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  salesperson
+}
+
+enum StageKind {
+  open
+  converted
+  lost
+}
+
+enum LeadSource {
+  Website
+  MetaAds
+  GoogleAds
+  Manual
+}
+
+enum CreatedByType {
+  user
+  integration
+}
+
+enum ActivityType {
+  call
+  meeting
+  follow_up
+  email
+  task
+}
+
+enum ActivityStatus {
+  pending
+  completed
+}
+
+enum EmailJobStatus {
+  scheduled
+  sent
+  failed
+  cancelled
+}
+
+enum QuotationStatus {
+  draft
+  sent
+  failed
+}
+
+enum EventStatus {
+  received
+  processed
+  failed
+}
+
+enum FieldType {
+  text
+  number
+  email
+  phone
+  dropdown
+  date
+  datetime
+  checkbox
+  textarea
+}
+
+enum TemplateKind {
+  stage
+  quotation
+}
+
+model User {
+  id                String   @id @default(cuid())
+  name              String
+  email             String   @unique
+  passwordHash      String
+  role              Role
+  isActive          Boolean  @default(true)
+  allocationPercent Int      @default(0)
+  inRotation        Boolean  @default(false)
+  phone             String   @default("")
+  initials          String
+  createdAt         DateTime @default(now())
+
+  permissions         UserPermission?
+  assignedLeads       Lead[]              @relation("LeadAssignee")
+  createdLeads        Lead[]              @relation("LeadCreator")
+  notes               Note[]
+  activities          Activity[]
+  quotations          Quotation[]
+  notifications       Notification[]
+  customFields        CustomField[]
+  assignmentCounter   AssignmentCounter?
+  auditLogs           AuditLog[]
+  stageChanges        StageHistory[]
+  assignmentsMade     AssignmentHistory[] @relation("AssignmentActor")
+  assignmentsFrom     AssignmentHistory[] @relation("AssignmentFrom")
+  assignmentsTo       AssignmentHistory[] @relation("AssignmentTo")
+  assignmentRules     AssignmentRule[]
+}
+
+model UserPermission {
+  userId         String  @id
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewAllLeads   Boolean @default(false)
+  reassignLeads  Boolean @default(false)
+  export         Boolean @default(false)
+  createFields   Boolean @default(false)
+  sendQuotations Boolean @default(false)
+}
+
+model LeadStage {
+  id        String    @id
+  name      String
+  position  Int
+  isActive  Boolean   @default(true)
+  kind      StageKind
+  color     String
+  leads     Lead[]
+  templates EmailTemplate[]
+  fromHist  StageHistory[] @relation("FromStage")
+  toHist    StageHistory[] @relation("ToStage")
+}
+
+model Lead {
+  id               String        @id @default(cuid())
+  name             String
+  mobile           String        @default("")
+  mobileNormalized String        @default("")
+  email            String        @default("")
+  emailLower       String        @default("")
+  state            String        @default("")
+  city             String        @default("")
+  source           LeadSource
+  stageId          String
+  stage            LeadStage     @relation(fields: [stageId], references: [id])
+  assignedToId     String
+  assignedTo       User          @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  createdById      String
+  createdBy        User          @relation("LeadCreator", fields: [createdById], references: [id])
+  createdByType    CreatedByType
+  duplicateOfId    String?
+  duplicateOf      Lead?         @relation("LeadDuplicates", fields: [duplicateOfId], references: [id])
+  duplicates       Lead[]        @relation("LeadDuplicates")
+  followupsDisabled Boolean      @default(false)
+  unsubscribed     Boolean       @default(false)
+  message          String        @default("")
+  deletedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  original        LeadOriginalData?
+  notes           Note[]
+  activities      Activity[]
+  quotations      Quotation[]
+  emailJobs       EmailJob[]
+  notifications   Notification[]
+  customValues    CustomFieldValue[]
+  stageHistory    StageHistory[]
+  assignmentHist  AssignmentHistory[]
+  incomingEvents  IncomingEvent[]
+
+  @@index([mobileNormalized])
+  @@index([emailLower])
+  @@index([assignedToId])
+  @@index([stageId])
+  @@index([createdAt])
+}
+
+model LeadOriginalData {
+  leadId     String   @id
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  rawPayload Json
+  campaign   String?
+  adSet      String?
+  formName   String?
+  pageUrl    String?
+  receivedAt DateTime @default(now())
+}
+
+model IncomingEvent {
+  id          String      @id @default(cuid())
+  source      LeadSource
+  externalId  String
+  rawPayload  Json
+  status      EventStatus @default(received)
+  attempts    Int         @default(0)
+  lastError   String?
+  leadId      String?
+  lead        Lead?       @relation(fields: [leadId], references: [id])
+  receivedAt  DateTime    @default(now())
+  lastSyncAt  DateTime?
+
+  @@unique([source, externalId])
+  @@index([status])
+}
+
+model StageHistory {
+  id           String    @id @default(cuid())
+  leadId       String
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromStageId  String?
+  fromStage    LeadStage? @relation("FromStage", fields: [fromStageId], references: [id])
+  toStageId    String
+  toStage      LeadStage @relation("ToStage", fields: [toStageId], references: [id])
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  changedAt    DateTime  @default(now())
+}
+
+model AssignmentHistory {
+  id         String   @id @default(cuid())
+  leadId     String
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromUserId String?
+  fromUser   User?    @relation("AssignmentFrom", fields: [fromUserId], references: [id])
+  toUserId   String
+  toUser     User     @relation("AssignmentTo", fields: [toUserId], references: [id])
+  reason     String
+  byUserId   String
+  byUser     User     @relation("AssignmentActor", fields: [byUserId], references: [id])
+  at         DateTime @default(now())
+}
+
+model AssignmentRule {
+  source LeadSource @id
+  userId String?
+  user   User?      @relation(fields: [userId], references: [id])
+}
+
+model AssignmentCounter {
+  userId        String @id
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedCount Int    @default(0)
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  body      String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Activity {
+  id          String         @id @default(cuid())
+  leadId      String
+  lead        Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type        ActivityType
+  description String
+  dueAt       DateTime
+  assignedToId String
+  assignedTo  User           @relation(fields: [assignedToId], references: [id])
+  status      ActivityStatus @default(pending)
+  completedAt DateTime?
+}
+
+model CustomField {
+  id           String    @id @default(cuid())
+  key          String    @unique
+  label        String
+  type         FieldType
+  options      Json      @default("[]")
+  required     Boolean   @default(false)
+  isActive     Boolean   @default(true)
+  createdById  String
+  createdBy    User      @relation(fields: [createdById], references: [id])
+  group        String    @default("Enquiry details")
+  defaultValue String    @default("")
+  values       CustomFieldValue[]
+}
+
+model CustomFieldValue {
+  id          String      @id @default(cuid())
+  leadId      String
+  lead        Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fieldId     String
+  field       CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  valueText   String?
+  valueNumber Float?
+  valueDate   DateTime?
+  valueBool   Boolean?
+
+  @@unique([leadId, fieldId])
+  @@index([fieldId, valueText])
+  @@index([fieldId, valueNumber])
+  @@index([fieldId, valueDate])
+}
+
+model EmailTemplate {
+  id        String       @id
+  kind      TemplateKind
+  stageId   String?
+  stage     LeadStage?   @relation(fields: [stageId], references: [id])
+  subject   String
+  body      String
+  delayDays Int          @default(0)
+  isActive  Boolean      @default(true)
+  jobs      EmailJob[]
+}
+
+model EmailJob {
+  id         String         @id @default(cuid())
+  leadId     String
+  lead       Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  templateId String
+  template   EmailTemplate  @relation(fields: [templateId], references: [id])
+  toEmail    String
+  scheduledAt DateTime
+  sentAt     DateTime?
+  status     EmailJobStatus @default(scheduled)
+  attempts   Int            @default(0)
+  response   String         @default("")
+}
+
+model EmailUnsubscribe {
+  email           String   @id
+  unsubscribedAt  DateTime @default(now())
+  source          String   @default("link")
+}
+
+model Quotation {
+  id          String          @id @default(cuid())
+  leadId      String
+  lead        Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  recipient   String
+  totalAmount Int
+  pdfPath     String?
+  status      QuotationStatus @default(draft)
+  sentAt      DateTime?
+  createdAt   DateTime        @default(now())
+  items       QuotationItem[]
+}
+
+model QuotationItem {
+  id          String    @id @default(cuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  spaceId     String    @default("")
+  name        String
+  details     String    @default("")
+  planName    String    @default("")
+  duration    String    @default("")
+  quantity    Int       @default(1)
+  unitPrice   Int
+  lineTotal   Int
+  city        String?
+  location    String?
+  listingUrl  String?
+  kind        String?
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  leadId    String?
+  lead      Lead?     @relation(fields: [leadId], references: [id])
+  message   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  action   String
+  entity   String
+  entityId String
+  before   Json?
+  after    Json?
+  at       DateTime @default(now())
+}
+
+model Setting {
+  key   String @id
+  value Json
+}

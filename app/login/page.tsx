@@ -1,19 +1,31 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { AMIT_ID, PRIYA_ID, ADMIN_ID } from "@/lib/mock/seed";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { useDemo } from "@/lib/demo-store";
 import { Button, Card, Field, Input } from "@/components/ui";
 
-export default function LoginPage() {
-  const { loginAs } = useDemo();
+function LoginForm() {
+  const { login } = useDemo();
   const router = useRouter();
-  const [email, setEmail] = useState("admin@vscrm.local");
+  const params = useSearchParams();
+  const [email, setEmail] = useState("admin@vospaces.com");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const go = (id: string) => {
-    loginAs(id);
-    router.push("/dashboard");
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await login(email, password);
+      router.push(params.get("next") || "/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign in");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -24,29 +36,33 @@ export default function LoginPage() {
             VS
           </div>
           <h1 className="text-2xl font-semibold">VS CRM</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">UI preview — data is not saved</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Sign in with your work email</p>
         </div>
         <Card>
-          <Field label="Email">
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <div className="mt-3">
-            <Field label="Password">
-              <Input type="password" defaultValue="••••••••" />
+          <form onSubmit={submit}>
+            <Field label="Email">
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" />
             </Field>
-          </div>
-          <p className="mt-2 text-xs text-[var(--muted)]">Password is cosmetic in this preview.</p>
-          <div className="mt-5 grid gap-2">
-            <Button onClick={() => go(ADMIN_ID)}>Continue as Admin</Button>
-            <Button variant="outline" onClick={() => go(PRIYA_ID)}>
-              Continue as Salesperson (Priya Sharma)
+            <div className="mt-3">
+              <Field label="Password">
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+              </Field>
+            </div>
+            {error ? <p className="mt-3 text-sm text-[var(--danger)]">{error}</p> : null}
+            <Button className="mt-5 w-full" disabled={busy || !email || !password}>
+              {busy ? "Signing in…" : "Sign in"}
             </Button>
-            <Button variant="ghost" onClick={() => go(AMIT_ID)}>
-              Continue as Salesperson (Amit Verma)
-            </Button>
-          </div>
+          </form>
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

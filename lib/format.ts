@@ -20,6 +20,16 @@ export function formatDateTime(iso: string) {
   }).format(new Date(iso));
 }
 
+export const GST_RATE = 0.18;
+
+export function withGst(amount: number) {
+  return Math.round(amount * (1 + GST_RATE));
+}
+
+export function formatInrNumber(amount: number) {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(amount);
+}
+
 export function formatInr(amount: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -57,7 +67,16 @@ export function slugify(label: string) {
 }
 
 export function todayIso() {
-  return "2026-11-05T12:00:00+05:30";
+  return new Date().toISOString();
+}
+
+export function istYmd(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: IST,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 export function nowIso() {

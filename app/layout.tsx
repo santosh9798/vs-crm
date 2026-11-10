@@ -10,7 +10,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "VS CRM",
-  description: "Single-company CRM — UI preview",
+  description: "VOspaces CRM",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

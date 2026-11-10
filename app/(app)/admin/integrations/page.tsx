@@ -13,11 +13,36 @@ export default function IntegrationsPage() {
     <AdminGate>
       <PageHeader
         title="Integrations"
-        subtitle="Raw events are saved before processing. Failed items can be reprocessed. Token expiry is warned here."
+        subtitle="Website webhook is live. Raw events are saved before processing. Failed items can be reprocessed."
       />
-      <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-        Meta long-lived token expires in 18 days. Renew it before leads stop flowing.
-      </div>
+      <Card className="mb-4">
+        <h2 className="font-semibold">Website webhook</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          vospaces.com should POST JSON to <code>/api/webhooks/website</code> with HMAC headers.
+        </p>
+        <pre className="mt-3 overflow-auto rounded-xl bg-[var(--canvas)] p-3 text-xs">
+{`POST /api/webhooks/website
+X-Timestamp: unix seconds
+X-Signature: sha256=<HMAC-SHA256 of timestamp + "." + raw body>
+
+{
+  "submission_id": "web-000123",
+  "submitted_at": "2026-11-09T10:15:00+05:30",
+  "name": "Asha Verma",
+  "mobile": "+91 98765 43210",
+  "email": "asha@example.com",
+  "state": "Delhi",
+  "city": "New Delhi",
+  "message": "Need a virtual office address",
+  "page_url": "https://vospaces.com/...",
+  "utm": { "source": "google", "campaign": "delhi-vo" }
+}`}
+        </pre>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          Success is 202 with an event_id. Retries with the same submission_id do not create a second lead.
+          Meta and Google Ads stay for a later phase.
+        </p>
+      </Card>
       <div className="grid gap-4 md:grid-cols-3">
         {sources.map((source) => {
           const events = state.incomingEvents.filter((e) => e.source === source);
@@ -68,7 +93,7 @@ export default function IntegrationsPage() {
           </tbody>
         </table>
       </Card>
-      <Button className="mt-3" variant="outline" onClick={() => toast("Sync started (preview)")}>
+      <Button className="mt-3" variant="outline" onClick={() => toast("Meta and Google sync is not connected yet", "info")}>
         Run scheduled sync now
       </Button>
     </AdminGate>

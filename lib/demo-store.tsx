@@ -9,46 +9,24 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { nowIso, slugify } from "@/lib/format";
-import * as seed from "@/lib/mock/seed";
+import type { AppState } from "@/lib/bootstrap";
 import type {
-  Activity,
   ActivityStatus,
   ActivityType,
-  AppNotification,
   AppSettings,
   AssignmentRule,
   CustomField,
-  EmailJob,
   EmailTemplate,
   FieldType,
-  IncomingEvent,
   Lead,
-  Note,
   Permissions,
   Quotation,
   QuotationItem,
-  Role,
   Stage,
   User,
 } from "@/lib/types";
 
-export type DemoState = {
-  users: User[];
-  stages: Stage[];
-  leads: Lead[];
-  notes: Note[];
-  activities: Activity[];
-  quotations: Quotation[];
-  emailJobs: EmailJob[];
-  notifications: AppNotification[];
-  customFields: CustomField[];
-  emailTemplates: EmailTemplate[];
-  assignmentRules: AssignmentRule[];
-  incomingEvents: IncomingEvent[];
-  settings: AppSettings;
-  sessionUserId: string | null;
-};
+export type DemoState = AppState & { sessionUserId: string | null };
 
 type Toast = { id: string; message: string; tone?: "ok" | "err" | "info" };
 
@@ -60,14 +38,13 @@ type DemoContextValue = {
   can: (key: keyof Permissions) => boolean;
   visibleLeads: Lead[];
   toasts: Toast[];
-  loginAs: (userId: string) => void;
-  logout: () => void;
-  switchPreview: (role: Role) => void;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
   toast: (message: string, tone?: Toast["tone"]) => void;
   dismissToast: (id: string) => void;
-  addLead: (lead: Omit<Lead, "id" | "createdAt" | "duplicateOfId">) => Lead;
-  updateLead: (id: string, patch: Partial<Lead>) => void;
-  addNote: (leadId: string, body: string) => void;
+  addLead: (lead: Omit<Lead, "id" | "createdAt" | "duplicateOfId">) => Promise<Lead>;
+  updateLead: (id: string, patch: Partial<Lead>) => Promise<void>;
+  addNote: (leadId: string, body: string) => Promise<void>;
   addActivity: (input: {
     leadId: string;
     type: ActivityType;
@@ -76,63 +53,106 @@ type DemoContextValue = {
     assignedTo: string;
     status?: ActivityStatus;
     silent?: boolean;
-  }) => void;
-  completeActivity: (id: string) => void;
-  addQuotation: (q: Omit<Quotation, "id" | "createdAt">) => Quotation;
-  updateQuotation: (id: string, patch: Partial<Quotation>) => void;
-  markNotificationsRead: (ids?: string[]) => void;
-  upsertCustomField: (field: Partial<CustomField> & { label: string; type: FieldType }) => void;
-  upsertStage: (stage: Partial<Stage> & { name: string }) => void;
-  reorderStage: (id: string, dir: -1 | 1) => void;
-  upsertUser: (user: Partial<User> & { name: string; email: string }) => void;
-  setAssignmentRules: (rules: AssignmentRule[]) => void;
-  setAllocations: (percents: Record<string, number>) => void;
-  upsertTemplate: (t: EmailTemplate) => void;
-  updateSettings: (patch: Partial<AppSettings>) => void;
-  reprocessEvent: (id: string) => void;
+  }) => Promise<void>;
+  completeActivity: (id: string) => Promise<void>;
+  addQuotation: (q: Omit<Quotation, "id" | "createdAt">) => Promise<Quotation>;
+  markNotificationsRead: (ids?: string[]) => Promise<void>;
+  upsertCustomField: (field: Partial<CustomField> & { label: string; type: FieldType }) => Promise<void>;
+  upsertStage: (stage: Partial<Stage> & { name: string }) => Promise<void>;
+  reorderStage: (id: string, dir: -1 | 1) => Promise<void>;
+  upsertUser: (user: Partial<User> & { name: string; email: string; password?: string }) => Promise<void>;
+  setAssignmentRules: (rules: AssignmentRule[]) => Promise<void>;
+  setAllocations: (percents: Record<string, number>) => Promise<void>;
+  upsertTemplate: (t: EmailTemplate) => Promise<void>;
+  updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
+  reprocessEvent: (id: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
 };
 
 const DemoContext = createContext<DemoContextValue | null>(null);
 
-const SESSION_KEY = "vs-crm-session-user";
+const emptyState = (): DemoState => ({
+  users: [],
+  stages: [],
+  leads: [],
+  notes: [],
+  activities: [],
+  quotations: [],
+  emailJobs: [],
+  notifications: [],
+  customFields: [],
+  emailTemplates: [],
+  assignmentRules: [],
+  incomingEvents: [],
+  settings: {
+    companyName: "VS CRM",
+    catalogApiUrl: "",
+    catalogApiKey: "",
+    smtp: { host: "", port: "587", username: "", password: "", fromName: "VOspaces", fromEmail: "" },
+  },
+  sessionUserId: null,
+});
 
 function nid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function initialState(): DemoState {
-  return {
-    users: seed.users,
-    stages: seed.stages,
-    leads: seed.leads,
-    notes: seed.notes,
-    activities: seed.activities,
-    quotations: seed.quotations,
-    emailJobs: seed.emailJobs,
-    notifications: seed.notifications,
-    customFields: seed.customFields,
-    emailTemplates: seed.emailTemplates,
-    assignmentRules: seed.assignmentRules,
-    incomingEvents: seed.incomingEvents,
-    settings: seed.settings,
-    sessionUserId: null,
-  };
+async function parseJson(res: Response) {
+  const data = (await res.json().catch(() => ({}))) as { error?: string; state?: AppState; leadId?: string; quotationId?: string };
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
 }
 
 export function DemoProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<DemoState>(initialState);
+  const [state, setState] = useState<DemoState>(emptyState);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [ready, setReady] = useState(false);
 
-  useEffect(() => {
-    const id = window.localStorage.getItem(SESSION_KEY);
-    if (id) setState((s) => ({ ...s, sessionUserId: id }));
-    setReady(true);
+  const toast = useCallback((message: string, tone: Toast["tone"] = "ok") => {
+    const id = nid("toast");
+    setToasts((t) => [...t, { id, message, tone }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
-  const currentUser = useMemo(
-    () => state.users.find((u) => u.id === state.sessionUserId) ?? null,
-    [state.users, state.sessionUserId],
+  const dismissToast = useCallback((id: string) => {
+    setToasts((t) => t.filter((x) => x.id !== id));
+  }, []);
+
+  const applyState = useCallback((next: AppState, user?: User | null) => {
+    setState({ ...next, sessionUserId: user?.id ?? currentUser?.id ?? null });
+    if (user) setCurrentUser(user);
+  }, [currentUser?.id]);
+
+  const refresh = useCallback(async () => {
+    const res = await fetch("/api/bootstrap", { cache: "no-store" });
+    if (res.status === 401) {
+      setCurrentUser(null);
+      setState(emptyState());
+      return;
+    }
+    const data = await parseJson(res);
+    if (data.state) applyState(data.state, (data as { user?: User }).user ?? currentUser);
+  }, [applyState, currentUser]);
+
+  useEffect(() => {
+    refresh().finally(() => setReady(true));
+    // initial load only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const act = useCallback(
+    async (type: string, payload: Record<string, unknown>) => {
+      const res = await fetch("/api/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, payload }),
+      });
+      const data = await parseJson(res);
+      if (data.state) applyState(data.state);
+      return data;
+    },
+    [applyState],
   );
 
   const isAdmin = currentUser?.role === "admin";
@@ -152,305 +172,178 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     return state.leads.filter((l) => l.assignedTo === currentUser.id);
   }, [currentUser, state.leads]);
 
-  const toast = useCallback((message: string, tone: Toast["tone"] = "ok") => {
-    const id = nid("toast");
-    setToasts((t) => [...t, { id, message, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    await parseJson(res);
+    const boot = await fetch("/api/bootstrap", { cache: "no-store" });
+    const data = await parseJson(boot);
+    applyState(data.state!, (data as { user?: User }).user ?? null);
+  }, [applyState]);
+
+  const logout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setCurrentUser(null);
+    setState(emptyState());
   }, []);
 
-  const dismissToast = useCallback((id: string) => {
-    setToasts((t) => t.filter((x) => x.id !== id));
-  }, []);
-
-  const loginAs = useCallback((userId: string) => {
-    window.localStorage.setItem(SESSION_KEY, userId);
-    setState((s) => ({ ...s, sessionUserId: userId }));
-  }, []);
-
-  const logout = useCallback(() => {
-    window.localStorage.removeItem(SESSION_KEY);
-    setState((s) => ({ ...s, sessionUserId: null }));
-  }, []);
-
-  const switchPreview = useCallback(
-    (role: Role) => {
-      const next =
-        role === "admin"
-          ? state.users.find((u) => u.role === "admin")
-          : state.users.find((u) => u.role === "salesperson" && u.isActive);
-      if (next) {
-        window.localStorage.setItem(SESSION_KEY, next.id);
-        setState((s) => ({ ...s, sessionUserId: next.id }));
-        toast(`Previewing as ${next.name}`, "info");
-      }
+  const addLead: DemoContextValue["addLead"] = useCallback(
+    async (lead) => {
+      const data = await act("lead.create", lead as unknown as Record<string, unknown>);
+      const created = (data.state as AppState | undefined)?.leads.find((l) => l.id === data.leadId);
+      toast("Lead created");
+      if (!created) throw new Error("Lead was created but could not be loaded");
+      return created;
     },
-    [state.users, toast],
+    [act, toast],
   );
 
-  const addLead: DemoContextValue["addLead"] = useCallback((lead) => {
-    const created: Lead = {
-      ...lead,
-      id: nid("ld"),
-      createdAt: nowIso(),
-      duplicateOfId: null,
-    };
-    setState((s) => ({ ...s, leads: [created, ...s.leads] }));
-    toast("Lead created");
-    return created;
-  }, [toast]);
-
   const updateLead = useCallback(
-    (id: string, patch: Partial<Lead>) => {
-      setState((s) => ({
-        ...s,
-        leads: s.leads.map((l) => (l.id === id ? { ...l, ...patch } : l)),
-      }));
+    async (id: string, patch: Partial<Lead>) => {
+      await act("lead.update", { id, patch });
     },
-    [],
+    [act],
   );
 
   const addNote = useCallback(
-    (leadId: string, body: string) => {
-      if (!state.sessionUserId) return;
-      const note: Note = {
-        id: nid("nt"),
-        leadId,
-        body,
-        authorId: state.sessionUserId,
-        createdAt: nowIso(),
-      };
-      setState((s) => ({ ...s, notes: [note, ...s.notes] }));
+    async (leadId: string, body: string) => {
+      await act("note.create", { leadId, body });
       toast("Note added");
     },
-    [state.sessionUserId, toast],
+    [act, toast],
   );
 
   const addActivity: DemoContextValue["addActivity"] = useCallback(
-    (input) => {
-      const { silent, status, ...rest } = input;
-      const activity: Activity = {
-        id: nid("ac"),
-        ...rest,
-        status: status ?? "pending",
-        completedAt: status === "completed" ? nowIso() : null,
-      };
-      setState((s) => ({ ...s, activities: [activity, ...s.activities] }));
-      if (!silent) toast(status === "completed" ? "Activity marked done" : "Activity scheduled");
+    async (input) => {
+      const { silent, ...rest } = input;
+      await act("activity.create", rest);
+      if (!silent) toast(rest.status === "completed" ? "Activity marked done" : "Activity scheduled");
     },
-    [toast],
+    [act, toast],
   );
 
   const completeActivity = useCallback(
-    (id: string) => {
-      setState((s) => ({
-        ...s,
-        activities: s.activities.map((a) =>
-          a.id === id ? { ...a, status: "completed", completedAt: nowIso() } : a,
-        ),
-      }));
+    async (id: string) => {
+      await act("activity.complete", { id });
       toast("Marked complete");
     },
-    [toast],
+    [act, toast],
   );
 
   const addQuotation: DemoContextValue["addQuotation"] = useCallback(
-    (q) => {
-      const created: Quotation = { ...q, id: nid("qt"), createdAt: nowIso() };
-      setState((s) => ({ ...s, quotations: [created, ...s.quotations] }));
+    async (q) => {
+      const data = await act("quotation.create", q as unknown as Record<string, unknown>);
+      const created = (data.state as AppState | undefined)?.quotations.find((item) => item.id === data.quotationId);
+      if (!created) throw new Error("Quotation was saved but could not be loaded");
       return created;
     },
-    [],
+    [act],
   );
 
-  const updateQuotation = useCallback((id: string, patch: Partial<Quotation>) => {
-    setState((s) => ({
-      ...s,
-      quotations: s.quotations.map((q) => (q.id === id ? { ...q, ...patch } : q)),
-    }));
-  }, []);
-
-  const markNotificationsRead = useCallback((ids?: string[]) => {
-    const at = nowIso();
-    setState((s) => ({
-      ...s,
-      notifications: s.notifications.map((n) => {
-        if (n.userId !== s.sessionUserId) return n;
-        if (ids && !ids.includes(n.id)) return n;
-        return { ...n, readAt: n.readAt ?? at };
-      }),
-    }));
-  }, []);
+  const markNotificationsRead = useCallback(
+    async (ids?: string[]) => {
+      await act("notifications.read", { ids });
+    },
+    [act],
+  );
 
   const upsertCustomField: DemoContextValue["upsertCustomField"] = useCallback(
-    (field) => {
-      setState((s) => {
-        if (field.id) {
-          return {
-            ...s,
-            customFields: s.customFields.map((f) => (f.id === field.id ? { ...f, ...field } : f)),
-          };
-        }
-        const key = slugify(field.label);
-        if (s.customFields.some((f) => f.key === key)) {
-          return s;
-        }
-        const created: CustomField = {
-          id: nid("cf"),
-          key,
-          label: field.label,
-          type: field.type,
-          options: field.options ?? [],
-          required: field.required ?? false,
-          isActive: true,
-          createdBy: s.sessionUserId ?? seed.ADMIN_ID,
-          group: field.group ?? "Enquiry details",
-          defaultValue: field.defaultValue ?? "",
-        };
-        return { ...s, customFields: [...s.customFields, created] };
-      });
+    async (field) => {
+      await act("field.upsert", field as unknown as Record<string, unknown>);
       toast(field.id ? "Field updated" : "Custom field created");
     },
-    [toast],
+    [act, toast],
   );
 
   const upsertStage: DemoContextValue["upsertStage"] = useCallback(
-    (stage) => {
-      setState((s) => {
-        if (stage.id) {
-          return { ...s, stages: s.stages.map((st) => (st.id === stage.id ? { ...st, ...stage } : st)) };
-        }
-        const created: Stage = {
-          id: nid("st"),
-          name: stage.name,
-          position: s.stages.length + 1,
-          isActive: true,
-          kind: stage.kind ?? "open",
-          color: stage.color ?? "#64748B",
-        };
-        return { ...s, stages: [...s.stages, created] };
-      });
+    async (stage) => {
+      await act("stage.upsert", stage as unknown as Record<string, unknown>);
       toast(stage.id ? "Stage updated" : "Stage created");
     },
-    [toast],
+    [act, toast],
   );
 
-  const reorderStage = useCallback((id: string, dir: -1 | 1) => {
-    setState((s) => {
-      const ordered = [...s.stages].sort((a, b) => a.position - b.position);
-      const idx = ordered.findIndex((st) => st.id === id);
-      const swap = idx + dir;
-      if (idx < 0 || swap < 0 || swap >= ordered.length) return s;
-      const tmp = ordered[idx];
-      ordered[idx] = ordered[swap];
-      ordered[swap] = tmp;
-      return {
-        ...s,
-        stages: ordered.map((st, i) => ({ ...st, position: i + 1 })),
-      };
-    });
-  }, []);
+  const reorderStage = useCallback(
+    async (id: string, dir: -1 | 1) => {
+      await act("stage.reorder", { id, dir });
+    },
+    [act],
+  );
 
   const upsertUser: DemoContextValue["upsertUser"] = useCallback(
-    (user) => {
-      setState((s) => {
-        if (user.id) {
-          return { ...s, users: s.users.map((u) => (u.id === user.id ? { ...u, ...user } : u)) };
-        }
-        const created: User = {
-          id: nid("u"),
-          name: user.name,
-          email: user.email,
-          role: "salesperson",
-          isActive: true,
-          allocationPercent: 0,
-          inRotation: false,
-          permissions: {
-            view_all_leads: false,
-            reassign_leads: false,
-            export: false,
-            create_fields: false,
-            send_quotations: false,
-          },
-          phone: user.phone ?? "",
-          initials: user.name
-            .split(" ")
-            .map((p) => p[0])
-            .join("")
-            .slice(0, 2)
-            .toUpperCase(),
-        };
-        return { ...s, users: [...s.users, created] };
-      });
+    async (user) => {
+      await act("user.upsert", user as unknown as Record<string, unknown>);
       toast(user.id ? "User updated" : "User created");
     },
-    [toast],
+    [act, toast],
   );
 
-  const setAssignmentRules = useCallback((rules: AssignmentRule[]) => {
-    setState((s) => ({ ...s, assignmentRules: rules }));
-    toast("Assignment rules saved");
-  }, [toast]);
+  const setAssignmentRules = useCallback(
+    async (rules: AssignmentRule[]) => {
+      await act("assignment.rules", { rules });
+      toast("Assignment rules saved");
+    },
+    [act, toast],
+  );
 
   const setAllocations = useCallback(
-    (percents: Record<string, number>) => {
+    async (percents: Record<string, number>) => {
       const total = Object.values(percents).reduce((a, b) => a + b, 0);
       if (total !== 100) {
         toast("Percentages must total 100", "err");
         return;
       }
-      setState((s) => ({
-        ...s,
-        users: s.users.map((u) =>
-          percents[u.id] === undefined ? u : { ...u, allocationPercent: percents[u.id], inRotation: percents[u.id] > 0 },
-        ),
-      }));
+      await act("assignment.allocations", { percents });
       toast("Allocation saved");
     },
-    [toast],
+    [act, toast],
   );
 
   const upsertTemplate = useCallback(
-    (t: EmailTemplate) => {
-      setState((s) => ({
-        ...s,
-        emailTemplates: s.emailTemplates.some((x) => x.id === t.id)
-          ? s.emailTemplates.map((x) => (x.id === t.id ? t : x))
-          : [...s.emailTemplates, t],
-      }));
+    async (t: EmailTemplate) => {
+      await act("template.upsert", t as unknown as Record<string, unknown>);
       toast("Template saved");
     },
-    [toast],
+    [act, toast],
   );
 
-  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
-    setState((s) => ({ ...s, settings: { ...s.settings, ...patch } }));
-    toast("Settings saved");
-  }, [toast]);
+  const updateSettings = useCallback(
+    async (patch: Partial<AppSettings>) => {
+      await act("settings.update", patch);
+      toast("Settings saved");
+    },
+    [act, toast],
+  );
 
   const reprocessEvent = useCallback(
-    (id: string) => {
-      setState((s) => ({
-        ...s,
-        incomingEvents: s.incomingEvents.map((e) =>
-          e.id === id ? { ...e, status: "processed", lastError: null } : e,
-        ),
-      }));
+    async (id: string) => {
+      await act("event.reprocess", { id });
       toast("Event reprocessed");
     },
-    [toast],
+    [act, toast],
+  );
+
+  const updatePassword = useCallback(
+    async (password: string) => {
+      await act("password.update", { password });
+      toast("Password updated");
+    },
+    [act, toast],
   );
 
   const value: DemoContextValue = {
     ready,
     state,
     currentUser,
-    isAdmin,
+    isAdmin: Boolean(isAdmin),
     can,
     visibleLeads,
     toasts,
-    loginAs,
+    login,
     logout,
-    switchPreview,
     toast,
     dismissToast,
     addLead,
@@ -459,7 +352,6 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     addActivity,
     completeActivity,
     addQuotation,
-    updateQuotation,
     markNotificationsRead,
     upsertCustomField,
     upsertStage,
@@ -470,6 +362,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     upsertTemplate,
     updateSettings,
     reprocessEvent,
+    updatePassword,
   };
 
   return <DemoContext.Provider value={value}>{children}</DemoContext.Provider>;

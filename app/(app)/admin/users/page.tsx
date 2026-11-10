@@ -20,6 +20,7 @@ export default function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
 
   const deactivate = (u: User) => {
     upsertUser({ ...u, isActive: !u.isActive, inRotation: u.isActive ? false : u.inRotation });
@@ -83,13 +84,17 @@ export default function UsersPage() {
           <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
           <Field label="Email"><Input value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
           <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+          <Field label="Temporary password">
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 8 characters" />
+          </Field>
           <Button
             onClick={() => {
-              upsertUser({ name, email, phone });
+              upsertUser({ name, email, phone, password: password || "ChangeMe123!" });
               setOpen(false);
               setName("");
               setEmail("");
               setPhone("");
+              setPassword("");
             }}
             disabled={!name || !email}
           >

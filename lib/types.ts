@@ -109,6 +109,10 @@ export type QuotationItem = {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  city?: string;
+  location?: string;
+  listingUrl?: string;
+  kind?: "space" | "ca";
 };
 
 export type Quotation = {
@@ -206,6 +210,7 @@ export type SmtpSettings = {
 
 export type AppSettings = {
   companyName: string;
+  catalogApiUrl: string;
   catalogApiKey: string;
   smtp: SmtpSettings;
 };
@@ -225,6 +230,10 @@ export type CatalogSpace = {
   address: string;
   cityId: string;
   description: string;
+  location?: string;
+  city?: string;
+  state?: string;
+  listingUrl?: string;
   plans: CatalogPlan[];
 };
 
