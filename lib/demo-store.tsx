@@ -178,10 +178,14 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    await parseJson(res);
+    const data = await parseJson(res);
+    if (data.state) {
+      applyState(data.state, (data as { user?: User }).user ?? null);
+      return;
+    }
     const boot = await fetch("/api/bootstrap", { cache: "no-store" });
-    const data = await parseJson(boot);
-    applyState(data.state!, (data as { user?: User }).user ?? null);
+    const next = await parseJson(boot);
+    applyState(next.state!, (next as { user?: User }).user ?? null);
   }, [applyState]);
 
   const logout = useCallback(async () => {
@@ -194,8 +198,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     async (lead) => {
       const data = await act("lead.create", lead as unknown as Record<string, unknown>);
       const created = (data.state as AppState | undefined)?.leads.find((l) => l.id === data.leadId);
-      toast("Lead created");
       if (!created) throw new Error("Lead was created but could not be loaded");
+      toast("Lead created");
       return created;
     },
     [act, toast],

@@ -165,19 +165,22 @@ export async function processWebsiteEvent(eventId: string) {
 export async function saveCustomValues(
   leadId: string,
   values: Record<string, string | number | boolean | null>,
-  tx: Prisma.TransactionClient = prisma,
+  tx: Prisma.TransactionClient | typeof prisma = prisma,
 ) {
-  const fields = await tx.customField.findMany();
   const { splitCustomValue } = await import("@/lib/custom-values");
-  for (const field of fields) {
-    if (!(field.key in values)) continue;
-    const split = splitCustomValue(field.type, values[field.key]);
-    await tx.customFieldValue.upsert({
-      where: { leadId_fieldId: { leadId, fieldId: field.id } },
-      update: split,
-      create: { leadId, fieldId: field.id, ...split },
-    });
-  }
+  const fields = await tx.customField.findMany();
+  const rows = fields.flatMap((field) => {
+    if (!(field.key in values)) return [];
+    const value = values[field.key];
+    if (value === null || value === undefined || value === "") return [];
+    const split = splitCustomValue(field.type, value);
+    if (split.valueText == null && split.valueNumber == null && split.valueDate == null && split.valueBool == null) {
+      return [];
+    }
+    return [{ leadId, fieldId: field.id, ...split }];
+  });
+  if (rows.length === 0) return;
+  await tx.customFieldValue.createMany({ data: rows, skipDuplicates: true });
 }
 
 export async function createManualLead(input: {

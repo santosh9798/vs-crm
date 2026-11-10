@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { useDemo } from "@/lib/demo-store";
 import { FieldGroup, groupedFields } from "@/components/custom-field-input";
@@ -18,8 +18,9 @@ function defaultsFrom(fields: { key: string; defaultValue: string; type: FieldTy
 }
 
 export default function NewLeadPage() {
-  const { addLead, addActivity, addNote, currentUser, state, upsertCustomField, can, isAdmin } = useDemo();
+  const { addLead, addActivity, addNote, currentUser, state, upsertCustomField, can, isAdmin, toast } = useDemo();
   const router = useRouter();
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
@@ -40,6 +41,10 @@ export default function NewLeadPage() {
   const [propGroup, setPropGroup] = useState("Enquiry details");
   const [propOptions, setPropOptions] = useState("");
 
+  useEffect(() => {
+    if (!assignedTo && currentUser?.id) setAssignedTo(currentUser.id);
+  }, [assignedTo, currentUser?.id]);
+
   const groups = useMemo(() => groupedFields(state.customFields), [state.customFields]);
   const canAddField = isAdmin || can("create_fields");
 
@@ -49,41 +54,52 @@ export default function NewLeadPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const lead = await addLead({
-      name,
-      mobile,
-      email,
-      state: stateName,
-      city,
-      source,
-      stageId,
-      assignedTo: assignedTo || currentUser!.id,
-      createdBy: currentUser!.id,
-      createdByType: "user",
-      followupsDisabled: false,
-      unsubscribed: false,
-      message,
-      original: { raw: { name, mobile, email, message, entered_by: "CRM form" } },
-      customValues: {
-        ...values,
-        whatsapp_number: values.whatsapp_number || mobile,
-        required_city: values.required_city || city,
-        required_state: values.required_state || stateName,
-      },
-    });
-    for (const a of queued) {
-      await addActivity({
-        leadId: lead.id,
-        type: a.type,
-        description: a.description,
-        dueAt: a.dueAt,
-        assignedTo: a.assignedTo,
-        status: a.status,
-        silent: true,
-      });
-      if (a.note) await addNote(lead.id, a.note);
+    if (!currentUser) {
+      toast("Sign in again, then create the lead", "err");
+      return;
     }
-    router.push(`/leads/${lead.id}`);
+    setSaving(true);
+    try {
+      const lead = await addLead({
+        name,
+        mobile,
+        email,
+        state: stateName,
+        city,
+        source,
+        stageId,
+        assignedTo: assignedTo || currentUser.id,
+        createdBy: currentUser.id,
+        createdByType: "user",
+        followupsDisabled: false,
+        unsubscribed: false,
+        message,
+        original: { raw: { name, mobile, email, message, entered_by: "CRM form" } },
+        customValues: {
+          ...values,
+          whatsapp_number: values.whatsapp_number || mobile,
+          required_city: values.required_city || city,
+          required_state: values.required_state || stateName,
+        },
+      });
+      for (const a of queued) {
+        await addActivity({
+          leadId: lead.id,
+          type: a.type,
+          description: a.description,
+          dueAt: a.dueAt,
+          assignedTo: a.assignedTo,
+          status: a.status,
+          silent: true,
+        });
+        if (a.note) await addNote(lead.id, a.note);
+      }
+      router.push(`/leads/${lead.id}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not create lead", "err");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -96,7 +112,7 @@ export default function NewLeadPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button type="submit">Create lead</Button>
+          <Button type="submit" disabled={saving}>{saving ? "Creating…" : "Create lead"}</Button>
           <Button type="button" variant="outline" onClick={() => router.back()}>
             Discard
           </Button>

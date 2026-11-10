@@ -3,6 +3,8 @@ import { runAction } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { loadAppState } from "@/lib/bootstrap";
 
+export const maxDuration = 30;
+
 export async function POST(request: Request) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
