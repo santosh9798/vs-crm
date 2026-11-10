@@ -19,6 +19,7 @@ export default function IntegrationsPage() {
         <h2 className="font-semibold">Website webhook</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
           vospaces.com should POST JSON to <code>/api/webhooks/website</code> with HMAC headers.
+          Upload <code>vs-crm-webhook.php</code>, <code>vs-crm-webhook-config.php</code> and the updated <code>quick_form_api.php</code> to the website root so landing-page forms create CRM leads.
         </p>
         <pre className="mt-3 overflow-auto rounded-xl bg-[var(--canvas)] p-3 text-xs">
 {`POST /api/webhooks/website

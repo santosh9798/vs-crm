@@ -2,7 +2,7 @@ import type {
   Activity,
   AppNotification,
   AppSettings,
-  AssignmentRule,
+  AssignmentShare,
   CatalogCity,
   CatalogSpace,
   CatalogState,
@@ -463,11 +463,14 @@ export const notifications: AppNotification[] = [
   { id: "nf_8", userId: PRIYA_ID, type: "quotation_sent", leadId: "ld_001", message: "Quotation sent to Asha Verma", readAt: "2026-10-26T16:15:00+05:30", createdAt: "2026-10-26T16:10:00+05:30" },
 ];
 
-export const assignmentRules: AssignmentRule[] = [
-  { source: "Website", userId: null },
-  { source: "Meta Ads", userId: PRIYA_ID },
-  { source: "Google Ads", userId: null },
-  { source: "Manual", userId: null },
+export const assignmentShares: AssignmentShare[] = [
+  { source: "Website", userId: PRIYA_ID, percent: 40 },
+  { source: "Website", userId: AMIT_ID, percent: 30 },
+  { source: "Website", userId: KAVITA_ID, percent: 30 },
+  { source: "Meta Ads", userId: PRIYA_ID, percent: 50 },
+  { source: "Meta Ads", userId: AMIT_ID, percent: 50 },
+  { source: "Google Ads", userId: KAVITA_ID, percent: 100 },
+  { source: "Manual", userId: PRIYA_ID, percent: 100 },
 ];
 
 export const incomingEvents: IncomingEvent[] = [

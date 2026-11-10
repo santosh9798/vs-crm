@@ -184,9 +184,10 @@ export type EmailTemplate = {
   isActive: boolean;
 };
 
-export type AssignmentRule = {
+export type AssignmentShare = {
   source: LeadSource;
-  userId: string | null;
+  userId: string;
+  percent: number;
 };
 
 export type IncomingEvent = {

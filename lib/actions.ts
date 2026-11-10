@@ -4,13 +4,13 @@ import { can, canViewAllLeads, isAdmin } from "@/lib/auth";
 import { encryptSecret } from "@/lib/crypto-secret";
 import { slugify } from "@/lib/format";
 import { toDbSource } from "@/lib/map";
-import { resetAssignmentCounts } from "@/lib/assignment";
+import { resetAssignmentCounts, validateShares } from "@/lib/assignment";
 import { createManualLead, processWebsiteEvent, saveCustomValues } from "@/lib/ingest";
 import type {
   ActivityStatus,
   ActivityType,
   AppSettings,
-  AssignmentRule,
+  AssignmentShare,
   CustomField,
   EmailTemplate,
   FieldType,
@@ -326,37 +326,31 @@ export async function runAction(user: User, type: string, payload: Record<string
             role: "salesperson",
             passwordHash: hashSync(password, 12),
             permissions: { create: {} },
-            assignmentCounter: { create: { assignedCount: 0 } },
           },
         });
       }
       return { ok: true };
     }
-    case "assignment.rules": {
+    case "assignment.shares": {
       if (!isAdmin(user)) throw new Error("Admin only");
-      const rules = payload.rules as AssignmentRule[];
-      await prisma.$transaction(
-        rules.map((rule) =>
-          prisma.assignmentRule.upsert({
-            where: { source: toDbSource(rule.source) },
-            update: { userId: rule.userId },
-            create: { source: toDbSource(rule.source), userId: rule.userId },
-          }),
-        ),
-      );
-      return { ok: true };
-    }
-    case "assignment.allocations": {
-      if (!isAdmin(user)) throw new Error("Admin only");
-      const percents = payload.percents as Record<string, number>;
-      const total = Object.values(percents).reduce((a, b) => a + b, 0);
-      if (total !== 100) throw new Error("Percentages must total 100");
+      const shares = (payload.shares as AssignmentShare[]).map((share) => ({
+        source: share.source,
+        userId: share.userId,
+        percent: Number(share.percent),
+      }));
+      validateShares(shares);
+      const dbShares = shares.map((share) => ({
+        source: toDbSource(share.source),
+        userId: share.userId,
+        percent: share.percent,
+      }));
+      const inPool = [...new Set(dbShares.map((share) => share.userId))];
       await prisma.$transaction(async (tx) => {
-        for (const [id, percent] of Object.entries(percents)) {
-          await tx.user.update({
-            where: { id },
-            data: { allocationPercent: percent, inRotation: percent > 0 },
-          });
+        await tx.assignmentShare.deleteMany();
+        if (dbShares.length) await tx.assignmentShare.createMany({ data: dbShares });
+        await tx.user.updateMany({ where: { role: "salesperson" }, data: { inRotation: false } });
+        if (inPool.length) {
+          await tx.user.updateMany({ where: { id: { in: inPool } }, data: { inRotation: true } });
         }
         await resetAssignmentCounts(tx);
       });

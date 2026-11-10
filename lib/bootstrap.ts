@@ -8,7 +8,7 @@ import type {
   Activity,
   AppNotification,
   AppSettings,
-  AssignmentRule,
+  AssignmentShare,
   CustomField,
   EmailJob,
   EmailTemplate,
@@ -36,7 +36,7 @@ export type AppState = {
   notifications: AppNotification[];
   customFields: CustomField[];
   emailTemplates: EmailTemplate[];
-  assignmentRules: AssignmentRule[];
+  assignmentShares: AssignmentShare[];
   incomingEvents: IncomingEvent[];
   settings: AppSettings;
 };
@@ -105,7 +105,7 @@ export async function loadAppState(user: User): Promise<AppState> {
     ? { deletedAt: null }
     : { deletedAt: null, assignedToId: user.id };
 
-  const [users, stages, fields, leads, notes, activities, quotations, emailJobs, notifications, templates, rules, events, setting] =
+  const [users, stages, fields, leads, notes, activities, quotations, emailJobs, notifications, templates, shares, events, setting] =
     await Promise.all([
       prisma.user.findMany({ include: { permissions: true }, orderBy: { createdAt: "asc" } }),
       prisma.leadStage.findMany({ orderBy: { position: "asc" } }),
@@ -117,7 +117,7 @@ export async function loadAppState(user: User): Promise<AppState> {
       prisma.emailJob.findMany({ where: { lead: leadWhere }, orderBy: { scheduledAt: "desc" } }),
       prisma.notification.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, take: 50 }),
       prisma.emailTemplate.findMany({ orderBy: { id: "asc" } }),
-      prisma.assignmentRule.findMany(),
+      prisma.assignmentShare.findMany(),
       user.role === "admin"
         ? prisma.incomingEvent.findMany({ orderBy: { receivedAt: "desc" }, take: 100 })
         : Promise.resolve([]),
@@ -217,9 +217,10 @@ export async function loadAppState(user: User): Promise<AppState> {
     delayDays: t.delayDays,
     isActive: t.isActive,
   }));
-  const mappedRules: AssignmentRule[] = rules.map((r) => ({
-    source: toUiSource(r.source),
-    userId: r.userId,
+  const mappedShares: AssignmentShare[] = shares.map((s) => ({
+    source: toUiSource(s.source),
+    userId: s.userId,
+    percent: s.percent,
   }));
   const mappedEvents: IncomingEvent[] = events.map((e) => ({
     id: e.id,
@@ -242,7 +243,7 @@ export async function loadAppState(user: User): Promise<AppState> {
     notifications: mappedNotesNotifs,
     customFields: mappedFields,
     emailTemplates: mappedTemplates,
-    assignmentRules: mappedRules,
+    assignmentShares: mappedShares,
     incomingEvents: mappedEvents,
     settings: settingsFromJson(setting?.value),
   };

@@ -119,7 +119,6 @@ async function main() {
           sendQuotations: true,
         },
       },
-      assignmentCounter: { create: { assignedCount: 0 } },
     },
   });
 
@@ -157,10 +156,10 @@ async function main() {
   }
 
   for (const source of [LeadSource.Website, LeadSource.MetaAds, LeadSource.GoogleAds, LeadSource.Manual]) {
-    await prisma.assignmentRule.upsert({
-      where: { source },
+    await prisma.assignmentShare.upsert({
+      where: { source_userId: { source, userId: sales.id } },
       update: {},
-      create: { source, userId: null },
+      create: { source, userId: sales.id, percent: 100 },
     });
   }
 

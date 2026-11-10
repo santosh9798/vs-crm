@@ -122,7 +122,18 @@ export async function processWebsiteEvent(eventId: string) {
         data: { leadId: created.id, toStageId: "st_new", userId: admin.id },
       });
 
-      if (!isDupe) await bumpAssignmentCount(assignedToId, tx);
+      if (!isDupe) await bumpAssignmentCount(assignedToId, event.source, tx);
+
+      const city = String(body.city ?? "").trim();
+      const preferred = String(body.preferred_location ?? "").trim() || city;
+      await saveCustomValues(created.id, {
+        whatsapp_number: mobile || null,
+        preferred_location: preferred || null,
+        required_city: city || null,
+        required_state: String(body.state ?? "").trim() || null,
+        company_name: String(body.company ?? "").trim() || null,
+        plan_type: String(body.plan_type ?? "").trim() || null,
+      }, tx);
 
       await tx.notification.create({
         data: {
@@ -239,7 +250,7 @@ export async function createManualLead(input: {
     await tx.stageHistory.create({
       data: { leadId: lead.id, toStageId: input.stageId, userId: input.createdBy },
     });
-    if (!isDupe) await bumpAssignmentCount(assignedToId, tx);
+    if (!isDupe) await bumpAssignmentCount(assignedToId, toDbSource(input.source), tx);
     await tx.notification.create({
       data: {
         userId: assignedToId,

@@ -14,7 +14,7 @@ import type {
   ActivityStatus,
   ActivityType,
   AppSettings,
-  AssignmentRule,
+  AssignmentShare,
   CustomField,
   EmailTemplate,
   FieldType,
@@ -61,8 +61,7 @@ type DemoContextValue = {
   upsertStage: (stage: Partial<Stage> & { name: string }) => Promise<void>;
   reorderStage: (id: string, dir: -1 | 1) => Promise<void>;
   upsertUser: (user: Partial<User> & { name: string; email: string; password?: string }) => Promise<void>;
-  setAssignmentRules: (rules: AssignmentRule[]) => Promise<void>;
-  setAllocations: (percents: Record<string, number>) => Promise<void>;
+  setAssignmentShares: (shares: AssignmentShare[]) => Promise<void>;
   upsertTemplate: (t: EmailTemplate) => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   reprocessEvent: (id: string) => Promise<void>;
@@ -82,7 +81,7 @@ const emptyState = (): DemoState => ({
   notifications: [],
   customFields: [],
   emailTemplates: [],
-  assignmentRules: [],
+  assignmentShares: [],
   incomingEvents: [],
   settings: {
     companyName: "VS CRM",
@@ -285,23 +284,10 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     [act, toast],
   );
 
-  const setAssignmentRules = useCallback(
-    async (rules: AssignmentRule[]) => {
-      await act("assignment.rules", { rules });
-      toast("Assignment rules saved");
-    },
-    [act, toast],
-  );
-
-  const setAllocations = useCallback(
-    async (percents: Record<string, number>) => {
-      const total = Object.values(percents).reduce((a, b) => a + b, 0);
-      if (total !== 100) {
-        toast("Percentages must total 100", "err");
-        return;
-      }
-      await act("assignment.allocations", { percents });
-      toast("Allocation saved");
+  const setAssignmentShares = useCallback(
+    async (shares: AssignmentShare[]) => {
+      await act("assignment.shares", { shares });
+      toast("Assignment saved");
     },
     [act, toast],
   );
@@ -361,8 +347,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     upsertStage,
     reorderStage,
     upsertUser,
-    setAssignmentRules,
-    setAllocations,
+    setAssignmentShares,
     upsertTemplate,
     updateSettings,
     reprocessEvent,

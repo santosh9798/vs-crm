@@ -328,7 +328,7 @@ export default function DashboardPage() {
                 <th className="pb-2 font-medium">Pending activities</th>
                 <th className="pb-2 font-medium">Converted</th>
                 <th className="pb-2 font-medium">Lost</th>
-                <th className="pb-2 font-medium">Share of leads / target</th>
+                <th className="pb-2 font-medium">Share of leads / sources</th>
               </tr>
             </thead>
             <tbody>
@@ -347,7 +347,15 @@ export default function DashboardPage() {
                   <td>{r.converted}</td>
                   <td>{r.lost}</td>
                   <td>
-                    {r.share.toFixed(1)}% / {r.u.allocationPercent}%
+                    {r.share.toFixed(1)}%
+                    <p className="text-xs text-[var(--muted)]">
+                      {state.assignmentShares.filter((s) => s.userId === r.u.id).length
+                        ? state.assignmentShares
+                            .filter((s) => s.userId === r.u.id)
+                            .map((s) => `${s.source} ${s.percent}%`)
+                            .join(" · ")
+                        : "Not in rotation"}
+                    </p>
                   </td>
                 </tr>
               ))}

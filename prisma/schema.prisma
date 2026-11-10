@@ -99,14 +99,14 @@ model User {
   activities          Activity[]
   quotations          Quotation[]
   notifications       Notification[]
-  customFields        CustomField[]
-  assignmentCounter   AssignmentCounter?
-  auditLogs           AuditLog[]
-  stageChanges        StageHistory[]
-  assignmentsMade     AssignmentHistory[] @relation("AssignmentActor")
-  assignmentsFrom     AssignmentHistory[] @relation("AssignmentFrom")
-  assignmentsTo       AssignmentHistory[] @relation("AssignmentTo")
-  assignmentRules     AssignmentRule[]
+  customFields         CustomField[]
+  assignmentCounters   AssignmentCounter[]
+  auditLogs            AuditLog[]
+  stageChanges         StageHistory[]
+  assignmentsMade      AssignmentHistory[] @relation("AssignmentActor")
+  assignmentsFrom      AssignmentHistory[] @relation("AssignmentFrom")
+  assignmentsTo        AssignmentHistory[] @relation("AssignmentTo")
+  assignmentShares     AssignmentShare[]
 }
 
 model UserPermission {
@@ -232,16 +232,22 @@ model AssignmentHistory {
   at         DateTime @default(now())
 }
 
-model AssignmentRule {
-  source LeadSource @id
-  userId String?
-  user   User?      @relation(fields: [userId], references: [id])
+model AssignmentShare {
+  source  LeadSource
+  userId  String
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  percent Int
+
+  @@id([source, userId])
 }
 
 model AssignmentCounter {
-  userId        String @id
-  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignedCount Int    @default(0)
+  source        LeadSource
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedCount Int        @default(0)
+
+  @@id([source, userId])
 }
 
 model Note {
