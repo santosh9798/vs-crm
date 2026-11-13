@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { leadgenFromPayload, loadMetaConfig, processMetaEvent, verifyMetaSignature } from "@/lib/meta";
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
 
   const pings = leadgenFromPayload(body);
   const eventIds: string[] = [];
+  const toProcess: string[] = [];
   for (const ping of pings) {
     if (meta.pageId && ping.pageId && ping.pageId !== meta.pageId) continue;
     const existing = await prisma.incomingEvent.findUnique({
@@ -41,13 +42,7 @@ export async function POST(request: NextRequest) {
     });
     if (existing) {
       eventIds.push(existing.id);
-      if (existing.status !== "processed") {
-        try {
-          await processMetaEvent(existing.id);
-        } catch {
-          /* saved as failed */
-        }
-      }
+      if (existing.status !== "processed") toProcess.push(existing.id);
       continue;
     }
     const event = await prisma.incomingEvent.create({
@@ -62,11 +57,19 @@ export async function POST(request: NextRequest) {
       },
     });
     eventIds.push(event.id);
-    try {
-      await processMetaEvent(event.id);
-    } catch {
-      /* saved as failed for Reprocess */
-    }
+    toProcess.push(event.id);
+  }
+
+  if (toProcess.length) {
+    after(async () => {
+      for (const id of toProcess) {
+        try {
+          await processMetaEvent(id);
+        } catch {
+          /* saved as failed for Reprocess */
+        }
+      }
+    });
   }
 
   return NextResponse.json({ status: "received", events: eventIds.length }, { status: 200 });
