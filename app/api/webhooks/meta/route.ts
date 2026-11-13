@@ -17,32 +17,31 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ status: "error", message: "Verify token mismatch" }, { status: 403 });
 }
 
-export async function POST(request: NextRequest) {
+async function ingestMetaPost(raw: string, signature: string) {
   const meta = await loadMetaConfig();
-  const raw = await request.text();
-  const signature = request.headers.get("x-hub-signature-256") ?? "";
-  if (!verifyMetaSignature(raw, signature, meta.appSecret)) {
-    return NextResponse.json({ status: "error", message: "Invalid signature" }, { status: 401 });
-  }
+  if (!verifyMetaSignature(raw, signature, meta.appSecret)) return;
 
   let body: unknown;
   try {
     body = JSON.parse(raw);
   } catch {
-    return NextResponse.json({ status: "error", message: "Invalid JSON" }, { status: 400 });
+    return;
   }
 
   const pings = leadgenFromPayload(body);
-  const eventIds: string[] = [];
-  const toProcess: string[] = [];
   for (const ping of pings) {
     if (meta.pageId && ping.pageId && ping.pageId !== meta.pageId) continue;
     const existing = await prisma.incomingEvent.findUnique({
       where: { source_externalId: { source: "MetaAds", externalId: ping.leadgenId } },
     });
     if (existing) {
-      eventIds.push(existing.id);
-      if (existing.status !== "processed") toProcess.push(existing.id);
+      if (existing.status !== "processed") {
+        try {
+          await processMetaEvent(existing.id);
+        } catch {
+          /* saved as failed */
+        }
+      }
       continue;
     }
     const event = await prisma.incomingEvent.create({
@@ -56,21 +55,17 @@ export async function POST(request: NextRequest) {
         status: "received",
       },
     });
-    eventIds.push(event.id);
-    toProcess.push(event.id);
+    try {
+      await processMetaEvent(event.id);
+    } catch {
+      /* saved as failed for Reprocess */
+    }
   }
+}
 
-  if (toProcess.length) {
-    after(async () => {
-      for (const id of toProcess) {
-        try {
-          await processMetaEvent(id);
-        } catch {
-          /* saved as failed for Reprocess */
-        }
-      }
-    });
-  }
-
-  return NextResponse.json({ status: "received", events: eventIds.length }, { status: 200 });
+export async function POST(request: NextRequest) {
+  const raw = await request.text();
+  const signature = request.headers.get("x-hub-signature-256") ?? "";
+  after(() => ingestMetaPost(raw, signature));
+  return NextResponse.json({ status: "received" }, { status: 200 });
 }
