@@ -7,7 +7,7 @@ import { Button, Card, Field, Input, PageHeader } from "@/components/ui";
 import { useDemo } from "@/lib/demo-store";
 
 export default function SettingsPage() {
-  const { state, updateSettings, updatePassword, toast } = useDemo();
+  const { state, updateSettings, updatePassword, toast, testSmtp } = useDemo();
   const [companyName, setCompanyName] = useState(state.settings.companyName);
   const [catalogApiUrl, setCatalogApiUrl] = useState(state.settings.catalogApiUrl);
   const [catalogApiKey, setCatalogApiKey] = useState(state.settings.catalogApiKey);
@@ -15,6 +15,7 @@ export default function SettingsPage() {
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [testing, setTesting] = useState(false);
+  const [smtpTesting, setSmtpTesting] = useState(false);
 
   return (
     <AdminGate>
@@ -77,8 +78,22 @@ export default function SettingsPage() {
           </div>
           <div className="mt-4 flex gap-2">
             <Button onClick={() => updateSettings({ smtp })}>Save SMTP</Button>
-            <Button variant="outline" onClick={() => toast("SMTP sending is not wired yet — save the mailbox first", "info")}>
-              Send test email
+            <Button
+              variant="outline"
+              disabled={smtpTesting}
+              onClick={async () => {
+                setSmtpTesting(true);
+                try {
+                  const result = await testSmtp();
+                  toast(`Test email sent to ${result.to}`);
+                } catch (err) {
+                  toast(err instanceof Error ? err.message : "SMTP test failed", "err");
+                } finally {
+                  setSmtpTesting(false);
+                }
+              }}
+            >
+              {smtpTesting ? "Sending…" : "Send test email"}
             </Button>
           </div>
         </Card>

@@ -181,6 +181,7 @@ export async function loadAppState(user: User): Promise<AppState> {
     status: q.status,
     sentAt: q.sentAt ? requiredIso(q.sentAt) : null,
     createdAt: requiredIso(q.createdAt),
+    optionsJson: q.pdfPath ?? undefined,
     items: q.items.map((i) => ({
       id: i.id,
       spaceId: i.spaceId,

@@ -44,9 +44,15 @@ export default function QuotationsPage() {
                   <td className="px-4 py-3">
                     {lead ? <Link className="text-[var(--accent)]" href={`/leads/${lead.id}`}>{lead.name}</Link> : q.leadId}
                   </td>
-                  <td className="px-4 py-3">{q.recipient}</td>
-                  <td className="px-4 py-3">{q.items.map((i) => i.name).join(", ")}</td>
-                  <td className="px-4 py-3 font-medium">{formatInr(q.totalAmount)}</td>
+                  <td className="px-4 py-3">{q.recipient || "—"}</td>
+                  <td className="px-4 py-3">
+                    <Link className="text-[var(--accent)]" href={`/quotations/${q.id}`}>
+                      {q.items.filter((i) => i.kind !== "ca").map((i) => i.name).join(", ") || "View quotation"}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 font-medium">
+                    <Link href={`/quotations/${q.id}`}>{formatInr(q.totalAmount)}</Link>
+                  </td>
                   <td className="px-4 py-3">
                     <Badge color={q.status === "sent" ? "#16A34A" : q.status === "failed" ? "#c45c5c" : "#F5A524"}>
                       {q.status}

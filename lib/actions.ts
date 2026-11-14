@@ -7,6 +7,9 @@ import { toDbSource } from "@/lib/map";
 import { resetAssignmentCounts, validateShares } from "@/lib/assignment";
 import { createManualLead, processWebsiteEvent, saveCustomValues } from "@/lib/ingest";
 import { processMetaEvent } from "@/lib/meta";
+import { sendMail } from "@/lib/mail";
+import { sendQuotationMail } from "@/lib/quotation-send";
+import { encodeQuoteOptions, type QuoteOptions } from "@/lib/quotation-view";
 import type {
   ActivityStatus,
   ActivityType,
@@ -151,15 +154,16 @@ export async function runAction(user: User, type: string, payload: Record<string
       const leadId = String(payload.leadId);
       await assertLead(user, leadId);
       const items = (payload.items as QuotationItem[]) ?? [];
-      const status = (payload.status as QuotationStatus) ?? "draft";
+      const wantSend = (payload.status as QuotationStatus) === "sent";
+      const options = payload.options as QuoteOptions | undefined;
       const quote = await prisma.quotation.create({
         data: {
           leadId,
           createdById: user.id,
           recipient: String(payload.recipient ?? ""),
           totalAmount: Number(payload.totalAmount ?? 0),
-          status,
-          sentAt: status === "sent" ? new Date() : null,
+          status: "draft",
+          pdfPath: options ? encodeQuoteOptions(options) : null,
           items: {
             create: items.map((item) => ({
               spaceId: item.spaceId,
@@ -178,15 +182,55 @@ export async function runAction(user: User, type: string, payload: Record<string
           },
         },
       });
-      await prisma.notification.create({
-        data: {
-          userId: user.id,
-          type: status === "sent" ? "quotation_sent" : "quotation_sent",
-          leadId,
-          message: status === "sent" ? `Quotation sent` : `Quotation draft saved`,
-        },
+      if (!wantSend) {
+        await prisma.notification.create({
+          data: {
+            userId: user.id,
+            type: "quotation_sent",
+            leadId,
+            message: "Quotation draft saved",
+          },
+        });
+        return { quotationId: quote.id, sent: false };
+      }
+      try {
+        await sendQuotationMail(quote.id);
+        return { quotationId: quote.id, sent: true };
+      } catch (err) {
+        return {
+          quotationId: quote.id,
+          sent: false,
+          mailError: err instanceof Error ? err.message : "SMTP send failed",
+        };
+      }
+    }
+    case "quotation.send": {
+      if (!isAdmin(user) && !can(user, "send_quotations")) throw new Error("Cannot send quotations");
+      const quote = await prisma.quotation.findUnique({ where: { id: String(payload.id) } });
+      if (!quote) throw new Error("Quotation not found");
+      await assertLead(user, quote.leadId);
+      try {
+        await sendQuotationMail(quote.id);
+        return { quotationId: quote.id, sent: true };
+      } catch (err) {
+        return {
+          quotationId: quote.id,
+          sent: false,
+          mailError: err instanceof Error ? err.message : "SMTP send failed",
+        };
+      }
+    }
+    case "smtp.test": {
+      if (!isAdmin(user)) throw new Error("Admin only");
+      const to = user.email.trim();
+      if (!to) throw new Error("Your account has no email address");
+      await sendMail({
+        to,
+        subject: "VS CRM test email",
+        text: "SMTP is working. Quotations can now be emailed from VS CRM.",
+        html: "<p>SMTP is working. Quotations can now be emailed from VS CRM.</p>",
       });
-      return { quotationId: quote.id };
+      return { to };
     }
     case "field.upsert": {
       if (!isAdmin(user) && !can(user, "create_fields")) throw new Error("Cannot manage fields");

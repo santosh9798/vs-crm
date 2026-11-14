@@ -55,7 +55,9 @@ type DemoContextValue = {
     silent?: boolean;
   }) => Promise<void>;
   completeActivity: (id: string) => Promise<void>;
-  addQuotation: (q: Omit<Quotation, "id" | "createdAt">) => Promise<Quotation>;
+  addQuotation: (q: Omit<Quotation, "id" | "createdAt">) => Promise<Quotation & { mailError?: string }>;
+  sendQuotation: (id: string) => Promise<{ mailError?: string }>;
+  testSmtp: () => Promise<{ to: string }>;
   markNotificationsRead: (ids?: string[]) => Promise<void>;
   upsertCustomField: (field: Partial<CustomField> & { label: string; type: FieldType }) => Promise<void>;
   upsertStage: (stage: Partial<Stage> & { name: string }) => Promise<void>;
@@ -98,7 +100,15 @@ function nid(prefix: string) {
 }
 
 async function parseJson(res: Response) {
-  const data = (await res.json().catch(() => ({}))) as { error?: string; state?: AppState; leadId?: string; quotationId?: string };
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    state?: AppState;
+    leadId?: string;
+    quotationId?: string;
+    sent?: boolean;
+    mailError?: string;
+    to?: string;
+  };
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
@@ -242,7 +252,24 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       const data = await act("quotation.create", q as unknown as Record<string, unknown>);
       const created = (data.state as AppState | undefined)?.quotations.find((item) => item.id === data.quotationId);
       if (!created) throw new Error("Quotation was saved but could not be loaded");
-      return created;
+      return { ...created, mailError: data.mailError };
+    },
+    [act],
+  );
+
+  const sendQuotation: DemoContextValue["sendQuotation"] = useCallback(
+    async (id) => {
+      const data = await act("quotation.send", { id });
+      return { mailError: data.mailError };
+    },
+    [act],
+  );
+
+  const testSmtp: DemoContextValue["testSmtp"] = useCallback(
+    async () => {
+      const data = await act("smtp.test", {});
+      if (!data.to) throw new Error("Test email did not report a recipient");
+      return { to: data.to };
     },
     [act],
   );
@@ -343,6 +370,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     addActivity,
     completeActivity,
     addQuotation,
+    sendQuotation,
+    testSmtp,
     markNotificationsRead,
     upsertCustomField,
     upsertStage,

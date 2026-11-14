@@ -115,6 +115,12 @@ export type QuotationItem = {
   kind?: "space" | "ca";
 };
 
+export type QuoteOptions = {
+  stateName: string;
+  planKind: "gst" | "br" | "ma";
+  includeCa: boolean;
+};
+
 export type Quotation = {
   id: string;
   leadId: string;
@@ -125,6 +131,8 @@ export type Quotation = {
   sentAt: string | null;
   createdAt: string;
   items: QuotationItem[];
+  options?: QuoteOptions;
+  optionsJson?: string;
 };
 
 export type NotificationType =

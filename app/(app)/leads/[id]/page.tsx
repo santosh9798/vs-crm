@@ -245,10 +245,14 @@ export default function LeadDetailPage() {
               <h2 className="mb-3 font-semibold">Quotations</h2>
               {quotes.length === 0 ? <p className="text-sm text-[var(--muted)]">None yet.</p> : null}
               {quotes.map((q) => (
-                <div key={q.id} className="mb-2 flex items-center justify-between rounded-xl bg-[var(--canvas)] px-3 py-2 text-sm">
+                <Link
+                  key={q.id}
+                  href={`/quotations/${q.id}`}
+                  className="mb-2 flex items-center justify-between rounded-xl bg-[var(--canvas)] px-3 py-2 text-sm hover:bg-white"
+                >
                   <span>{formatInr(q.totalAmount)} · {q.status}</span>
                   <span className="text-xs text-[var(--muted)]">{formatDate(q.createdAt)}</span>
-                </div>
+                </Link>
               ))}
             </Card>
             <Card>

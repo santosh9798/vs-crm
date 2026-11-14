@@ -41,6 +41,7 @@ function Wizard() {
     state.settings.catalogApiUrl.trim() ? "loading" : "mock",
   );
   const [catalogError, setCatalogError] = useState("");
+  const [saving, setSaving] = useState<"draft" | "sent" | null>(null);
 
   useEffect(() => {
     const url = state.settings.catalogApiUrl.trim();
@@ -132,7 +133,7 @@ function Wizard() {
       kind: "space",
     }));
     const cas: QuotationItem[] = includeCa
-      ? CA_SERVICES.filter((c) => caIds.includes(c.id)).map((c) => ({
+      ? (caIds.length ? CA_SERVICES.filter((c) => caIds.includes(c.id)) : [...CA_SERVICES]).map((c) => ({
           id: c.id,
           spaceId: c.id,
           name: c.name,
@@ -152,18 +153,34 @@ function Wizard() {
   const lowest = selectedSpaces[0]?.plans[0].price ?? 0;
 
   const send = async (as: "draft" | "sent") => {
-    if (!lead || !currentUser || selectedSpaces.length === 0) return;
-    await addQuotation({
-      leadId: lead.id,
-      createdBy: currentUser.id,
-      recipient: lead.email,
-      totalAmount: withGst(lowest),
-      status: as,
-      sentAt: as === "sent" ? new Date().toISOString() : null,
-      items: quoteItems,
-    });
-    toast(as === "sent" ? "Quotation saved as sent" : "Draft saved");
-    router.push("/quotations");
+    if (!lead || !currentUser || selectedSpaces.length === 0 || saving) return;
+    if (as === "sent" && !lead.email.trim()) {
+      toast("This lead has no email address — save a draft or add an email on the lead first", "err");
+      return;
+    }
+    setSaving(as);
+    try {
+      const created = await addQuotation({
+        leadId: lead.id,
+        createdBy: currentUser.id,
+        recipient: lead.email,
+        totalAmount: withGst(lowest),
+        status: as,
+        sentAt: as === "sent" ? new Date().toISOString() : null,
+        items: quoteItems,
+        options: { stateName, planKind, includeCa },
+      });
+      if (created.mailError) {
+        toast(`Quotation saved, but email failed: ${created.mailError}`, "err");
+      } else {
+        toast(as === "sent" ? `Quotation emailed to ${lead.email}` : "Draft saved");
+      }
+      router.push(`/quotations/${created.id}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not save quotation", "err");
+    } finally {
+      setSaving(null);
+    }
   };
 
   const copyQuote = async () => {
@@ -195,10 +212,14 @@ function Wizard() {
         subtitle={subtitle}
         actions={
           <>
-            <Button variant="outline" size="sm" disabled={selectedSpaces.length === 0} onClick={copyQuote}>Copy text</Button>
+            <Button variant="outline" size="sm" disabled={selectedSpaces.length === 0 || Boolean(saving)} onClick={copyQuote}>Copy text</Button>
             <Button variant="outline" size="sm" disabled={selectedSpaces.length === 0} onClick={() => window.print()}>Print</Button>
-            <Button variant="secondary" size="sm" disabled={selectedSpaces.length === 0} onClick={() => send("draft")}>Save draft</Button>
-            <Button size="sm" disabled={selectedSpaces.length === 0} onClick={() => send("sent")}>Send to lead</Button>
+            <Button variant="secondary" size="sm" disabled={selectedSpaces.length === 0 || Boolean(saving)} onClick={() => send("draft")}>
+              {saving === "draft" ? "Saving…" : "Save draft"}
+            </Button>
+            <Button size="sm" disabled={selectedSpaces.length === 0 || Boolean(saving)} onClick={() => send("sent")}>
+              {saving === "sent" ? "Sending…" : "Send to lead"}
+            </Button>
           </>
         }
       />
