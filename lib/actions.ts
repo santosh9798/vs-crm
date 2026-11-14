@@ -6,7 +6,7 @@ import { slugify } from "@/lib/format";
 import { toDbSource } from "@/lib/map";
 import { resetAssignmentCounts, validateShares } from "@/lib/assignment";
 import { createManualLead, processWebsiteEvent, saveCustomValues } from "@/lib/ingest";
-import { processMetaEvent } from "@/lib/meta";
+import { inspectStoredPageToken, processMetaEvent } from "@/lib/meta";
 import { sendMail } from "@/lib/mail";
 import { sendQuotationMail } from "@/lib/quotation-send";
 import { encodeQuoteOptions, type QuoteOptions } from "@/lib/quotation-view";
@@ -27,6 +27,10 @@ import type {
   StageKind,
   User,
 } from "@/lib/types";
+
+function isMaskedSecret(value?: string) {
+  return !value || /^•+$/.test(value.trim());
+}
 
 function initialsOf(name: string) {
   return name
@@ -427,9 +431,9 @@ export async function runAction(user: User, type: string, payload: Record<string
         smtp?: { password?: string };
         meta?: Partial<AppSettings["meta"]>;
       };
-      const keepPassword = !patch.smtp || !patch.smtp.password || patch.smtp.password.includes("•");
-      const keepAppSecret = !patch.meta || !patch.meta.appSecret || patch.meta.appSecret.includes("•");
-      const keepPageToken = !patch.meta || !patch.meta.pageAccessToken || patch.meta.pageAccessToken.includes("•");
+      const keepPassword = !patch.smtp || isMaskedSecret(patch.smtp.password);
+      const keepAppSecret = !patch.meta || isMaskedSecret(patch.meta.appSecret);
+      const keepPageToken = !patch.meta || isMaskedSecret(patch.meta.pageAccessToken);
       const next = {
         ...prev,
         ...patch,
@@ -473,6 +477,10 @@ export async function runAction(user: User, type: string, payload: Record<string
       if (event.source === "MetaAds") await processMetaEvent(event.id);
       else await processWebsiteEvent(event.id);
       return { ok: true };
+    }
+    case "meta.checkToken": {
+      if (!isAdmin(user)) throw new Error("Admin only");
+      return inspectStoredPageToken();
     }
     case "password.update": {
       const password = String(payload.password ?? "");

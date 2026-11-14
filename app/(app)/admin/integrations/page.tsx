@@ -7,11 +7,13 @@ import { useDemo } from "@/lib/demo-store";
 import { formatDateTime } from "@/lib/format";
 
 export default function IntegrationsPage() {
-  const { state, reprocessEvent, updateSettings, toast } = useDemo();
+  const { state, reprocessEvent, updateSettings, checkMetaToken, toast } = useDemo();
   const sources = ["Website", "Meta Ads", "Google Ads"] as const;
   const emptyMeta = { verifyToken: "", appSecret: "", pageAccessToken: "", pageId: "" };
   const [meta, setMeta] = useState(state.settings.meta ?? emptyMeta);
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [tokenStatus, setTokenStatus] = useState("");
   const callbackUrl = useMemo(() => {
     if (typeof window === "undefined") return "/api/webhooks/meta";
     return `${window.location.origin}/api/webhooks/meta`;
@@ -51,6 +53,11 @@ export default function IntegrationsPage() {
         <p className="mt-1 text-sm text-[var(--muted)]">
           In Meta Developer Console, add this callback URL, subscribe the Page to <code>leadgen</code>, then paste tokens below.
           Instant Form fills become CRM leads with source Meta Ads and use Assignment percentages.
+        </p>
+        <p className="mt-2 text-sm text-[#b45309]">
+          Do not paste a Graph API Explorer token — those expire in a few hours. Use a System User token with expiry{" "}
+          <strong>Never</strong> and permission <code>leads_retrieval</code> (Meta Business Suite → Business settings → Users →
+          System users). After saving, click Check token, then Reprocess failed Meta events.
         </p>
         {callbackUrl.includes("localhost") ? (
           <p className="mt-2 text-sm text-[#b45309]">
@@ -100,7 +107,7 @@ export default function IntegrationsPage() {
               type="password"
               value={meta.pageAccessToken}
               onChange={(e) => setMeta({ ...meta, pageAccessToken: e.target.value })}
-              placeholder="Page token with leads_retrieval"
+              placeholder="Paste the full EAA… token (replace the dots)"
             />
           </Field>
         </div>
@@ -109,8 +116,37 @@ export default function IntegrationsPage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={saveMeta} disabled={saving}>{saving ? "Saving…" : "Save Meta"}</Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={checking || !metaReady}
+            onClick={async () => {
+              setChecking(true);
+              setTokenStatus("");
+              try {
+                const info = await checkMetaToken();
+                const expiry = info.neverExpires
+                  ? "does not expire"
+                  : info.expiresAt
+                    ? `expires ${new Date(info.expiresAt).toLocaleString()}`
+                    : "expiry unknown";
+                const message = `Token valid for ${info.name || "Page"} (${info.id}) — ${expiry}`;
+                setTokenStatus(message);
+                toast(message, info.neverExpires ? "ok" : "info");
+              } catch (err) {
+                const message = err instanceof Error ? err.message : "Token check failed";
+                setTokenStatus(message);
+                toast(message, "err");
+              } finally {
+                setChecking(false);
+              }
+            }}
+          >
+            {checking ? "Checking…" : "Check token"}
+          </Button>
           <p className="self-center text-sm text-[var(--muted)]">
-            {metaReady ? "Configured — Meta can send test leads." : "Save verify token, app secret and page token to go live."}
+            {tokenStatus ||
+              (metaReady ? "Configured — Meta can send test leads." : "Save verify token, app secret and page token to go live.")}
           </p>
         </div>
       </Card>
@@ -154,7 +190,7 @@ export default function IntegrationsPage() {
                 <td className="px-4 py-3 text-[var(--muted)]">{e.lastError ?? "—"}</td>
                 <td className="px-4 py-3">
                   {e.status === "failed" ? (
-                    <Button size="sm" variant="outline" onClick={() => reprocessEvent(e.id)}>
+                    <Button size="sm" variant="outline" onClick={() => void reprocessEvent(e.id)}>
                       Reprocess
                     </Button>
                   ) : null}
@@ -173,7 +209,16 @@ export default function IntegrationsPage() {
             toast("No failed Meta events", "info");
             return;
           }
-          for (const event of failed) await reprocessEvent(event.id);
+          let ok = 0;
+          let bad = 0;
+          for (const event of failed) {
+            if (await reprocessEvent(event.id, { silent: true })) ok += 1;
+            else bad += 1;
+          }
+          toast(
+            bad ? `${ok} processed, ${bad} still failed — see the Error column` : `${ok} events reprocessed`,
+            bad ? "err" : "ok",
+          );
         }}
       >
         Reprocess failed Meta events

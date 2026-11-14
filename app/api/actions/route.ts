@@ -17,6 +17,7 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Action failed";
     const status = message === "Not allowed" || message === "Admin only" ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    const state = await loadAppState(user).catch(() => null);
+    return NextResponse.json({ error: message, ...(state ? { state } : {}) }, { status });
   }
 }

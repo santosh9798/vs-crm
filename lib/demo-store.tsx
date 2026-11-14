@@ -58,6 +58,7 @@ type DemoContextValue = {
   addQuotation: (q: Omit<Quotation, "id" | "createdAt">) => Promise<Quotation & { mailError?: string }>;
   sendQuotation: (id: string) => Promise<{ mailError?: string }>;
   testSmtp: () => Promise<{ to: string }>;
+  checkMetaToken: () => Promise<{ id: string; name: string; expiresAt: string | null; neverExpires: boolean }>;
   markNotificationsRead: (ids?: string[]) => Promise<void>;
   upsertCustomField: (field: Partial<CustomField> & { label: string; type: FieldType }) => Promise<void>;
   upsertStage: (stage: Partial<Stage> & { name: string }) => Promise<void>;
@@ -66,7 +67,7 @@ type DemoContextValue = {
   setAssignmentShares: (shares: AssignmentShare[]) => Promise<void>;
   upsertTemplate: (t: EmailTemplate) => Promise<void>;
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
-  reprocessEvent: (id: string) => Promise<void>;
+  reprocessEvent: (id: string, opts?: { silent?: boolean }) => Promise<boolean>;
   updatePassword: (password: string) => Promise<void>;
 };
 
@@ -108,6 +109,10 @@ async function parseJson(res: Response) {
     sent?: boolean;
     mailError?: string;
     to?: string;
+    id?: string;
+    name?: string;
+    expiresAt?: string | null;
+    neverExpires?: boolean;
   };
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
@@ -158,8 +163,21 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, payload }),
       });
-      const data = await parseJson(res);
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        state?: AppState;
+        leadId?: string;
+        quotationId?: string;
+        sent?: boolean;
+        mailError?: string;
+        to?: string;
+        id?: string;
+        name?: string;
+        expiresAt?: string | null;
+        neverExpires?: boolean;
+      };
       if (data.state) applyState(data.state);
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
       return data;
     },
     [applyState],
@@ -274,6 +292,20 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     [act],
   );
 
+  const checkMetaToken: DemoContextValue["checkMetaToken"] = useCallback(
+    async () => {
+      const data = await act("meta.checkToken", {});
+      if (!data.id) throw new Error("Meta did not return a Page for this token");
+      return {
+        id: data.id,
+        name: data.name ?? "",
+        expiresAt: data.expiresAt ?? null,
+        neverExpires: Boolean(data.neverExpires),
+      };
+    },
+    [act],
+  );
+
   const markNotificationsRead = useCallback(
     async (ids?: string[]) => {
       await act("notifications.read", { ids });
@@ -337,9 +369,15 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   );
 
   const reprocessEvent = useCallback(
-    async (id: string) => {
-      await act("event.reprocess", { id });
-      toast("Event reprocessed");
+    async (id: string, opts?: { silent?: boolean }) => {
+      try {
+        await act("event.reprocess", { id });
+        if (!opts?.silent) toast("Event reprocessed");
+        return true;
+      } catch (err) {
+        if (!opts?.silent) toast(err instanceof Error ? err.message : "Reprocess failed", "err");
+        return false;
+      }
     },
     [act, toast],
   );
@@ -372,6 +410,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     addQuotation,
     sendQuotation,
     testSmtp,
+    checkMetaToken,
     markNotificationsRead,
     upsertCustomField,
     upsertStage,
